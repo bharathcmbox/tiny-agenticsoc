@@ -32,12 +32,18 @@ class Settings:
     indexer_user: str
     indexer_password: str
     openrouter_key: str
+    anthropic_key: str
 
     @classmethod
     def load(cls) -> "Settings":
         env = {**_read_env_file(ROOT / ".env.example"), **_read_env_file(ROOT / ".env")}
         get = lambda k: os.environ.get(k) or env.get(k, "")
         key = os.environ.get("OPENROUTER_API_KEY") or _read_env_file(Path.home() / ".openrouter_env").get("OPENROUTER_API_KEY", "")
+        # Anthropic key: SOC_ANTHROPIC_API_KEY (env, then ~/.anthropic_env), falling back to an
+        # ANTHROPIC_API_KEY line in that file. Deliberately not the shell's ANTHROPIC_API_KEY, which
+        # would also switch Claude Code itself to API billing.
+        afile = _read_env_file(Path.home() / ".anthropic_env")
+        akey = os.environ.get("SOC_ANTHROPIC_API_KEY") or afile.get("SOC_ANTHROPIC_API_KEY") or afile.get("ANTHROPIC_API_KEY", "")
         creds_file = ROOT / get("INDEXER_CREDS_FILE")
         if not creds_file.exists():
             raise SystemExit(f"missing {creds_file} (soc-agent:password)")
@@ -51,4 +57,5 @@ class Settings:
             indexer_user=user,
             indexer_password=pw,
             openrouter_key=key,
+            anthropic_key=akey,
         )

@@ -5,8 +5,12 @@ DFIR-IRIS cases, approval-gated response.
 
 ## Setup
 
-- OpenRouter key: read from `OPENROUTER_API_KEY` in the environment, falling back to `~/.openrouter_env`.
-  It is never copied into the repo. Put a credit limit on the key in OpenRouter.
+- **Providers.** Model strings in `.env` carry a prefix: `anthropic:claude-haiku-5-5` calls the Anthropic
+  API directly, spending Anthropic credits (key: `SOC_ANTHROPIC_API_KEY` in `~/.anthropic_env`), and
+  `openrouter:<id>` calls OpenRouter (key: `OPENROUTER_API_KEY` from the environment or `~/.openrouter_env`).
+  Defaults: triage `anthropic:claude-haiku-5-5`, investigation `anthropic:claude-sonnet-5-5`.
+- **Don't export `ANTHROPIC_API_KEY` in your interactive shell.** Claude Code would pick it up and bill
+  to API credits instead of your subscription. The agent reads its key from the file, not your shell.
 - Non-secret settings: `.env` (copied from `.env.example`): models, `MIN_LEVEL`, how to reach the indexer.
 - Indexer access: user `soc-agent` with role `soc_agent_ro` (read-only on `wazuh-alerts-*` and
   `wazuh-archives-*`; writes and other indices return 403). Password in
@@ -30,8 +34,13 @@ techniques, evidence, tokens, **cost in USD** and latency.
 - **Poller**: alerts with `rule.level ≥ MIN_LEVEL` (7), excluding compliance (`sca`) findings, grouped
   by (host, rule) so repeats cost one call. Each bundle carries up to 3 distinct samples, trimmed to
   the useful fields, plus the other rules seen on that host within ±10 minutes.
-- **Triage**: `anthropic/claude-haiku-5.5` with reasoning effort `low`, forced `submit_triage` tool call
-  (verdict, confidence, escalate, ATT&CK IDs, summary, rationale, evidence, open questions).
+- **Triage**: Claude Haiku 5.5 at effort `low`. The answer comes through a `submit_triage` tool (verdict,
+  confidence, escalate, ATT&CK IDs, summary, rationale, evidence, open questions). On the Anthropic path:
+  `tool_choice: auto` + `strict: true` schema + an explicit instruction, with one re-prompt if no tool
+  call comes back (forced `tool_choice` is rejected by Sonnet/Opus 5.5). The system prompt and tool are
+  prompt-cached (1,360 tokens read from cache on every call after the first). `stop_reason: refusal` is
+  recorded as verdict `error` and escalated to a human. On OpenRouter: forced tool call plus
+  `reasoning.effort`.
   The system prompt carries the asset inventory, not knowledge of the test harness.
 
 ## First results (1 Nov 2026)
@@ -42,6 +51,15 @@ techniques, evidence, tokens, **cost in USD** and latency.
 | Pre-attack hour (admin activity only) | 6 | 2 benign, 4 suspicious | 3 | $0.0042 |
 
 Average cost **$0.0008 per bundle**, about 6–10 s each.
+
+Same 17 bundles, both providers (same model):
+
+| Path | Verdicts | Escalated | Cost | Avg latency |
+|---|---|---|---|---|
+| OpenRouter → Haiku 5.5 | 10 malicious · 5 suspicious · 2 benign | 13 | $0.0131 | 4.2 s |
+| Anthropic API → Haiku 5.5 | 10 malicious · 4 suspicious · 3 benign | 13 | $0.0136 | 5.9 s |
+
+There were no refusals on credential-dumping content, no re-prompts and no `max_tokens` retries.
 
 Gotchas found on the way:
 

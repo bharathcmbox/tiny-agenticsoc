@@ -3,7 +3,7 @@ name = "socagent"
 version = "0.1.0"
 description = "tiny-agenticsoc agentic plane: alert poller, triage and investigation agents"
 requires-python = ">=3.12"
-dependencies = ["openai>=1.60"]
+dependencies = ["openai>=1.60", "anthropic>=1.0"]
 
 [build-system]
 requires = ["hatchling"]

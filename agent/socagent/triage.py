@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import asdict, dataclass
 
-from .llm import LLM, Usage
+from .llm import LLM
 from .poller import Bundle
 
 ENVIRONMENT = """\
@@ -37,28 +37,26 @@ insufficient, say what is missing. Prefer specific MITRE ATT&CK technique IDs.
 Always answer by calling submit_triage exactly once."""
 
 TOOL = {
-    "type": "function",
-    "function": {
-        "name": "submit_triage",
-        "description": "Submit the triage verdict for this alert bundle.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "verdict": {"type": "string", "enum": ["benign", "suspicious", "malicious"]},
-                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                "escalate": {"type": "boolean", "description": "Send to the investigation agent"},
-                "attack_techniques": {"type": "array", "items": {"type": "string"},
-                                      "description": "MITRE ATT&CK IDs, e.g. T1003.001"},
-                "summary": {"type": "string", "description": "One sentence: what happened"},
-                "rationale": {"type": "string", "description": "At most three sentences: why this verdict"},
-                "key_evidence": {"type": "array", "items": {"type": "string"},
-                                 "description": "Field=value facts that drove the verdict"},
-                "open_questions": {"type": "array", "items": {"type": "string"},
-                                   "description": "What an investigator should check next"},
-            },
-            "required": ["verdict", "confidence", "escalate", "attack_techniques", "summary", "rationale",
-                         "key_evidence", "open_questions"],
+    "name": "submit_triage",
+    "description": "Submit the triage verdict for this alert bundle. Always answer through this tool.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "verdict": {"type": "string", "enum": ["benign", "suspicious", "malicious"]},
+            "confidence": {"type": "number", "description": "0.0 to 1.0"},
+            "escalate": {"type": "boolean", "description": "Send to the investigation agent"},
+            "attack_techniques": {"type": "array", "items": {"type": "string"},
+                                  "description": "MITRE ATT&CK IDs, e.g. T1003.001"},
+            "summary": {"type": "string", "description": "One sentence: what happened"},
+            "rationale": {"type": "string", "description": "At most three sentences: why this verdict"},
+            "key_evidence": {"type": "array", "items": {"type": "string"},
+                             "description": "Field=value facts that drove the verdict"},
+            "open_questions": {"type": "array", "items": {"type": "string"},
+                               "description": "What an investigator should check next"},
         },
+        "required": ["verdict", "confidence", "escalate", "attack_techniques", "summary", "rationale",
+                     "key_evidence", "open_questions"],
+        "additionalProperties": False,
     },
 }
 
@@ -93,7 +91,7 @@ class Triage:
     alert_count: int
     first: str
     last: str
-    verdict: str
+    verdict: str            # benign | suspicious | malicious | error
     confidence: float
     escalate: bool
     attack_techniques: list[str]
@@ -103,34 +101,29 @@ class Triage:
     open_questions: list[str]
     model: str
     prompt_tokens: int
+    cache_read_tokens: int
     completion_tokens: int
     cost_usd: float
     latency_s: float
+    notes: list[str]
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)
 
 
 def triage(llm: LLM, model: str, b: Bundle) -> Triage:
-    messages = [{"role": "system", "content": SYSTEM},
-                {"role": "user", "content": "Triage this alert bundle:\n" + b.to_prompt()}]
-    force = {"type": "function", "function": {"name": "submit_triage"}}
-    resp, usage = llm.chat(model, messages, tools=[TOOL], tool_choice=force, max_tokens=3000,
-                           reasoning_effort="low")
-    choice = resp.choices[0]
-    if choice.finish_reason == "length":  # ran out of budget mid-answer: retry once with more room
-        resp, extra = llm.chat(model, messages, tools=[TOOL], tool_choice=force, max_tokens=8000,
-                               reasoning_effort="low")
-        usage.add(extra); choice = resp.choices[0]
-    calls = choice.message.tool_calls or []
-    if not calls:
-        raise RuntimeError(f"no tool call (finish={choice.finish_reason}): {choice.message.content!r:.200}")
-    v = _repair(json.loads(calls[0].function.arguments))
+    r = llm.call_tool(model, SYSTEM, "Triage this alert bundle:\n" + b.to_prompt(), TOOL, effort="low")
+    v = _repair(r.args) if r.args else {
+        "verdict": "error", "confidence": 0.0, "escalate": True, "attack_techniques": [],
+        "summary": f"triage failed (stop_reason={r.stop_reason}); needs a human", "rationale": r.text[:300],
+        "key_evidence": [], "open_questions": []}
+    u = r.usage
     return Triage(bundle_key=b.key, host=b.host, rule_id=b.rule_id, rule_description=b.rule_description,
                   max_level=b.max_level, alert_count=b.count, first=b.first, last=b.last,
                   verdict=v["verdict"], confidence=float(v.get("confidence", 0)), escalate=bool(v.get("escalate")),
                   attack_techniques=v.get("attack_techniques", []), summary=v.get("summary", ""),
                   rationale=v.get("rationale", ""), key_evidence=v.get("key_evidence", []),
-                  open_questions=v.get("open_questions", []), model=model,
-                  prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens,
-                  cost_usd=usage.cost_usd, latency_s=round(usage.latency_s, 2))
+                  open_questions=v.get("open_questions", []), model=u.model,
+                  prompt_tokens=u.prompt_tokens, cache_read_tokens=u.cache_read_tokens,
+                  completion_tokens=u.output_tokens, cost_usd=round(u.cost_usd, 6),
+                  latency_s=round(u.latency_s, 2), notes=r.notes)

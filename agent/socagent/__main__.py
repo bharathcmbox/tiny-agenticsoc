@@ -59,8 +59,10 @@ def cmd_triage(a, s: Settings):
     done = set()
     if LEDGER.exists():
         done = {json.loads(l)["bundle_key"] for l in LEDGER.read_text().splitlines() if l.strip()}
-    todo = [b for b in bundles if b.key not in done][: a.limit]
+    todo = [b for b in bundles if a.force or b.key not in done][: a.limit]
     print(f"{len(bundles)} bundles, {len(todo)} to triage with {s.triage_model}")
+    if not todo:
+        return
     llm, total = LLM(s), 0.0
     RESULTS.mkdir(parents=True, exist_ok=True)
     with LEDGER.open("a") as f:
@@ -69,8 +71,10 @@ def cmd_triage(a, s: Settings):
             f.write(t.to_json() + "\n"); f.flush()
             total += t.cost_usd
             flag = "→ ESCALATE" if t.escalate else ""
+            cache = f"cache {t.cache_read_tokens}/{t.prompt_tokens}" if t.cache_read_tokens else ""
             print(f"[{t.verdict:10s} {t.confidence:.2f}] {b.host:11s} {b.rule_id:>6} x{b.count:<3d} "
-                  f"{','.join(t.attack_techniques)[:22]:22s} ${t.cost_usd:.5f} {flag}\n    {t.summary}")
+                  f"{','.join(t.attack_techniques)[:22]:22s} ${t.cost_usd:.5f} {t.latency_s:4.1f}s {cache} {flag}"
+                  f"{'  notes=' + str(t.notes) if t.notes else ''}\n    {t.summary}")
     if not a.since and not a.until:
         STATE.write_text(json.dumps({"checkpoint": until.isoformat()}))
     print(f"spent ${total:.4f} on {len(todo)} bundles")
@@ -80,12 +84,15 @@ def cmd_ledger(a, s: Settings):
     if not LEDGER.exists():
         sys.exit("no ledger yet")
     rows = [json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()]
-    by = {}
-    for r in rows:
-        by.setdefault(r["verdict"], 0); by[r["verdict"]] += 1
-    cost = sum(r["cost_usd"] for r in rows)
-    print(f"{len(rows)} triaged · {by} · escalated {sum(r['escalate'] for r in rows)} · "
-          f"${cost:.4f} total · ${cost / max(len(rows), 1):.5f}/bundle")
+    for model in sorted({r["model"] for r in rows}):
+        rs = [r for r in rows if r["model"] == model]
+        by = {}
+        for r in rs:
+            by[r["verdict"]] = by.get(r["verdict"], 0) + 1
+        cost = sum(r["cost_usd"] for r in rs)
+        lat = sum(r["latency_s"] for r in rs) / len(rs)
+        print(f"{model:40s} {len(rs):3d} triaged · {by} · escalated {sum(r['escalate'] for r in rs)} · "
+              f"${cost:.4f} total · ${cost / len(rs):.5f}/bundle · {lat:.1f}s avg")
 
 
 def main():
@@ -93,6 +100,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("poll"); p.add_argument("--since"); p.add_argument("--until"); p.add_argument("--show", type=int)
     t = sub.add_parser("triage"); t.add_argument("--since"); t.add_argument("--until"); t.add_argument("--limit", type=int, default=10)
+    t.add_argument("--force", action="store_true", help="re-triage bundles already in the ledger")
     sub.add_parser("ledger")
     a = ap.parse_args()
     s = Settings.load()
