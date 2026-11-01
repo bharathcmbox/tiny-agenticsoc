@@ -59,6 +59,7 @@ class Incident:
     bundle_keys: list[str]
     alerts: list[dict] = field(default_factory=list)   # one line per bundle, for humans and the investigator
     triage_cost_usd: float = 0.0
+    investigation: dict | None = None   # verdict, confidence, title, cost, report path, when
 
 
 def severity(members: list[dict]) -> str:
@@ -144,6 +145,7 @@ def group(triaged: list[dict], existing: list[Incident]) -> list[Incident]:
                      "verdict": m["verdict"], "confidence": m["confidence"], "summary": m["summary"],
                      "open_questions": m.get("open_questions", [])} for m in members],
             triage_cost_usd=round(sum(m["cost_usd"] for m in members), 6),
+            investigation=prev.investigation if prev else None,
         ))
     return out
 

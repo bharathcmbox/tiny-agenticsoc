@@ -7,7 +7,8 @@ SIEM, real (contained) attacks, and LLM agents that triage and investigate the a
 human approving every response.
 
 Almost everything is open source. The lab runs on a single Windows 11 laptop under Hyper-V, so
-hosting costs nothing. The only spend is LLM tokens through OpenRouter, behind a hard credit cap.
+hosting costs nothing. The only spend is LLM tokens: about $0.0008 to triage an alert bundle and $0.04 to $0.10 to
+investigate an incident.
 
 > An interactive version of this page, with a clickable diagram and path tracing, is in
 > [`architecture.html`](architecture.html).
@@ -36,7 +37,7 @@ flowchart LR
     TRI["Triage agent<br/><small>small model</small>"]
     INV["Investigation agent<br/><small>tool-use loop</small>"]
     TOOLS["SOC tools (MCP)"]
-    OR["OpenRouter"]
+    OR["Anthropic API · OpenRouter"]
     IRIS["DFIR-IRIS<br/><small>cases</small>"]
     YOU{{"You approve"}}
     CC["Claude Code"]
@@ -75,9 +76,9 @@ and can only act on the lab after a human approves.
 | Ingest | Collect, ship, decode, apply detection rules | Wazuh agent → Wazuh manager | GPL-2.0 | every host → wazuh VM | ✅ live |
 | Store | Index alerts and every raw event, searchable | Filebeat → Wazuh indexer (OpenSearch) | Apache-2.0 | wazuh VM | ✅ live |
 | Look | Dashboards and search for humans | Wazuh dashboard | Apache-2.0 / GPL-2.0 | wazuh VM | ✅ live |
-| Reason | Decide what matters, investigate, explain | Triage + investigation agents (Python) | this repo | WSL2 | Phase 3 |
+| Reason | Decide what matters, investigate, explain | Triage + investigation agents (Python) | this repo | WSL2 | ✅ live |
 | Reason | Give agents and Claude Code the same SOC tools | MCP server | this repo | WSL2 | Phase 3 |
-| Reason | Route each task to a suitable model | OpenRouter | paid API | cloud | Phase 3 |
+| Reason | Route each task to a suitable model | Anthropic API (OpenRouter optional) | paid API | cloud | ✅ live |
 | Record | Cases, timelines, IOCs, analyst notes | DFIR-IRIS | LGPL-3.0 | WSL2 (Docker) | Phase 3 |
 | Act | Isolate host, kill process, block IP, after approval | Wazuh active response | GPL-2.0 | manager → agents | Phase 3 |
 | Measure | Did we detect it, judge it right, and at what cost? | Eval harness | this repo | WSL2 | Phase 4 |
@@ -142,7 +143,7 @@ configured by cloud-init, so the whole lab can be rebuilt from the repo.
 | 0 | ✅ done | Hyper-V switch and VMs, NAT and containment, Zeek and Suricata with community-id, verified with a test alert |
 | 1 | ✅ done | Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules |
 | 2 | ✅ done | 17 atomics with Defender on, coverage matrix with harness-noise subtraction, new rules for LSASS dumping, cron, setuid, schtasks and log clearing: 7 → 12 of 17 detected |
-| 3 | next | Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response |
+| 3 | 🔨 in progress | Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response |
 | 4 | planned | Eval harness: scheduled atomics produce a scorecard of detection, verdict accuracy, latency and cost per alert |
 
 ---

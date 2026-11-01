@@ -120,6 +120,45 @@ def cmd_incident(a, s: Settings):
     print(json.dumps(I.asdict(inc), indent=1, ensure_ascii=False))
 
 
+def cmd_investigate(a, s: Settings):
+    from . import incidents as I
+    from .investigate import investigate, save
+    from .llm import LLM
+    from .tools import SocTools
+    incs = I.load()
+    if a.id:
+        todo = [i for i in incs if i.id in a.id]
+        missing = set(a.id) - {i.id for i in todo}
+        if missing:
+            sys.exit(f"unknown incident(s): {', '.join(sorted(missing))}")
+    else:
+        todo = [i for i in incs if i.status == "new"]
+    if not todo:
+        print("nothing to investigate (no incidents with status 'new')")
+        return
+    llm, total = LLM(s), 0.0
+    with Indexer(s) as ix:
+        tools = SocTools(ix)
+        for inc in todo:
+            print(f"{inc.id} [{inc.severity}] {inc.title}")
+            inc.status = "investigating"; I.save(incs)
+            inv = investigate(llm, s.investigate_model, tools, inc, effort=a.effort)
+            j, md = save(inv)
+            r = inv.report or {}
+            inc.status = "investigated" if inv.status == "complete" else "needs_human"
+            inc.investigation = {"verdict": r.get("verdict", inv.status), "confidence": r.get("confidence"),
+                                 "title": r.get("title"), "cost_usd": inv.cost_usd, "steps": inv.steps,
+                                 "tool_calls": len(inv.tool_calls), "report": md, "served_by": inv.served_by}
+            I.save(incs)
+            total += inv.cost_usd
+            print(f"  => {r.get('verdict', inv.status)} ({r.get('confidence', '-')}) · {inv.steps} turns · "
+                  f"{len(inv.tool_calls)} tools · cache {inv.cache_read_tokens:,}/{inv.input_tokens + inv.cache_write_tokens + inv.cache_read_tokens:,} in · "
+                  f"{inv.output_tokens:,} out · ${inv.cost_usd:.4f} · {inv.seconds}s\n     {r.get('title', '')}\n     report: {md}")
+            for n in inv.notes:
+                print(f"     note: {n}")
+    print(f"spent ${total:.4f} on {len(todo)} investigation(s)")
+
+
 def cmd_run(a, s: Settings):
     """One SOC cycle: triage everything new since the checkpoint, then regroup incidents."""
     a.since = a.until = None
@@ -137,12 +176,14 @@ def main():
     sub.add_parser("ledger")
     r = sub.add_parser("run", help="triage new alerts since the checkpoint, then group incidents")
     r.add_argument("--limit", type=int, default=25)
+    v = sub.add_parser("investigate", help="run the investigation agent on incidents (default: all with status 'new')")
+    v.add_argument("id", nargs="*"); v.add_argument("--effort", default="medium", choices=["low", "medium", "high", "xhigh"])
     sub.add_parser("incidents", help="group escalated verdicts into incidents and list them")
     inc = sub.add_parser("incident", help="show one incident"); inc.add_argument("id")
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "run": cmd_run}[a.cmd](a, s)
+     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate}[a.cmd](a, s)
 
 
 if __name__ == "__main__":

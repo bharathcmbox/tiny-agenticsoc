@@ -1,7 +1,7 @@
 # Phase 3: The agentic plane
 
-Status: **poller, triage and incident grouping working**. Next: investigation agent, MCP tools,
-DFIR-IRIS cases, approval-gated response.
+Status: **poller, triage, incident grouping and investigation agent working**. Next: MCP server for the
+same tools (Claude Code), DFIR-IRIS cases, approval-gated active response.
 
 ## Setup
 
@@ -27,6 +27,8 @@ uv run --project agent python -m socagent ledger                        # verdic
 uv run --project agent python -m socagent incidents                     # group escalations into incidents
 uv run --project agent python -m socagent incident INC-20261101-003     # one incident as JSON
 uv run --project agent python -m socagent run                           # one cycle: triage new + group
+uv run --project agent python -m socagent investigate                   # investigate all incidents with status 'new'
+uv run --project agent python -m socagent investigate INC-20261101-003  # one incident (report in results/agent/investigations/)
 uv run --project agent python -m unittest discover -s agent/tests       # grouping rules
 ```
 
@@ -56,6 +58,18 @@ techniques, evidence, tokens, **cost in USD** and latency.
   T1555, T1070.001, T1562, T1486, T1490), **high** for any other malicious verdict, and **medium** for
   suspicious only. IDs (`INC-YYYYMMDD-NNN`) and statuses stay stable across re-runs. Output goes to
   `results/agent/incidents.json`.
+
+- **Investigation agent** (`investigate.py` + `tools.py`): Claude Sonnet 5.5, adaptive thinking at effort
+  `medium`, in a manual tool loop capped at 16 turns. Read-only tools over the indexer:
+  `search_events` (Lucene over alerts or archives), `host_timeline`, `process_tree` (Sysmon GUID chain
+  to the root plus children), `network_flows` (Zeek + Suricata by community_id or IP) and `top_values`.
+  Each tool result is capped at 9,000 characters. The answer is a strict `submit_investigation` call
+  (verdict, timeline with cited evidence, root cause, scope, IOCs, ATT&CK, proposed actions, detection
+  gaps, open questions), rendered to Markdown. Append-only history with response content echoed back
+  unchanged (Sonnet 5.5 binds thinking blocks to the conversation). Automatic prompt caching across
+  turns. **Server-side fallback is on** (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`):
+  a safety decline on this security content retries on a fallback model. Cost is counted per attempt
+  from `usage.iterations`. Proposed actions are only proposals: nothing in the agent can change a host.
 
 ## First results (1 Nov 2026)
 
@@ -95,6 +109,26 @@ Incident grouping on those verdicts: **13 escalations became 4 incidents**, one 
 The two attacks stay separate because they share no host or network link. The two medium incidents
 are benign. Closing them is the investigation agent's first job, and the measure of whether
 investigating "suspicious" incidents is worth the money.
+
+Investigations of those four incidents (Sonnet 5.5, effort medium):
+
+| Incident | Investigator's title | Verdict | Right? | Tool calls | Cost | Time |
+|---|---|---|---|---|---|---|
+| 001 | Short-lived tsoc-test account create/delete by soc via SSH from admin workstation (detection test) | benign 0.75 | ✅ | 2 | $0.041 | 23 s |
+| 002 | Atomic Red Team tooling install (PowerShell 7) on lin-victim by soc from admin workstation | benign 0.70 | ✅ | 6 | $0.102 | 25 s |
+| 003 | Atomic Red Team-style LSASS dump, log clear and persistence on win-victim via SSH from 10.10.10.254 | true positive 0.80 | ✅ | 4 | $0.078 | 22 s |
+| 004 | Cron persistence file and SUID test binary created then deleted via sudo from soc SSH sessions | true positive 0.80 | ✅ | 5 | $0.095 | 24 s |
+
+That's **$0.32 for all four**, with no refusals and no fallbacks needed. Things worth noting:
+
+- On 003 the process tree took it straight to the root (`sshd.exe -z` → `powershell -c "Invoke-AtomicTest
+  T1003.001 -TestNumbers 2"` → `rundll32 comsvcs.dll MiniDump 712`). It recognised the emulation framework
+  but still called it a **true positive pending confirmation that the exercise was authorised**. That's
+  the right call: a compromised admin account would look identical.
+- The reports say what they did *not* verify (e.g. "I did not check sudoers, authorized_keys or cron
+  directly"). That makes the open questions actionable.
+- Cost lever: several tool results hit the 9,000-character cap, and input tokens dominate the spend
+  (57–69% served from cache). Tighter default sizes and field selection are the first cost tuning.
 
 Observations that shape the next steps:
 

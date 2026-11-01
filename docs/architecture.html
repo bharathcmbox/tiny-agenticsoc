@@ -153,7 +153,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <div class="kicker">tiny-agenticsoc · architecture · status as of 1 Nov 2026</div>
   <h1>An agentic SOC on one laptop</h1>
   <p class="lede">A small but realistic security operations center: real endpoint and network telemetry, a real SIEM, real (contained) attacks, and LLM agents that triage and investigate the alerts, with a human approving every response.</p>
-  <p>Almost everything is open source. The lab runs on a single Windows 11 laptop under Hyper-V, so hosting costs nothing; the only spend is LLM tokens through OpenRouter, behind a hard credit cap.</p>
+  <p>Almost everything is open source. The lab runs on a single Windows 11 laptop under Hyper-V, so hosting costs nothing; the only spend is LLM tokens: about $0.0008 to triage an alert bundle and $0.04 to $0.10 to investigate an incident.</p>
 </header>
 
 <section>
@@ -200,13 +200,13 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <g class="node st-live" data-id="manager" tabindex="0" role="button" aria-label="Wazuh manager"><rect x="530" y="150" width="180" height="140" rx="6"/><circle class="dot" cx="698" cy="162" r="4"/><text class="t" x="620" y="182" text-anchor="middle">Wazuh manager</text><text class="s" x="620" y="210" text-anchor="middle">remoted :1514</text><text class="s" x="620" y="230" text-anchor="middle">decoders + rules</text><text class="s" x="620" y="250" text-anchor="middle">local_rules.xml</text><text class="s" x="620" y="270" text-anchor="middle">active response</text></g>
   <g class="node st-live" data-id="dashboard" tabindex="0" role="button" aria-label="Wazuh dashboard"><rect x="770" y="92" width="180" height="60" rx="6"/><circle class="dot" cx="938" cy="104" r="4"/><text class="t" x="860" y="117" text-anchor="middle">Wazuh dashboard</text><text class="s" x="860" y="135" text-anchor="middle">for humans · :443</text></g>
   <g class="node st-live" data-id="indexer" tabindex="0" role="button" aria-label="Wazuh indexer"><rect x="770" y="196" width="180" height="120" rx="6"/><circle class="dot" cx="938" cy="208" r="4"/><text class="t" x="860" y="224" text-anchor="middle">Wazuh indexer</text><text class="s" x="860" y="244" text-anchor="middle">OpenSearch · :9200</text><text class="s" x="860" y="270" text-anchor="middle">wazuh-alerts-*</text><text class="s" x="860" y="290" text-anchor="middle">wazuh-archives-*</text></g>
-  <g class="node st-planned" data-id="poller" tabindex="0" role="button" aria-label="Alert poller"><rect x="770" y="520" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="532" r="4"/><text class="t" x="860" y="548" text-anchor="middle">Alert poller</text><text class="s" x="860" y="566" text-anchor="middle">level ≥ 7 · dedupe</text></g>
-  <g class="node st-planned" data-id="triage" tabindex="0" role="button" aria-label="Triage agent"><rect x="560" y="520" width="150" height="66" rx="6"/><circle class="dot" cx="698" cy="532" r="4"/><text class="t" x="635" y="548" text-anchor="middle">Triage agent</text><text class="s" x="635" y="566" text-anchor="middle">small, cheap model</text></g>
-  <g class="node st-planned" data-id="invest" tabindex="0" role="button" aria-label="Investigation agent"><rect x="330" y="520" width="170" height="66" rx="6"/><circle class="dot" cx="488" cy="532" r="4"/><text class="t" x="415" y="548" text-anchor="middle">Investigation agent</text><text class="s" x="415" y="566" text-anchor="middle">tool-use loop</text></g>
+  <g class="node st-live" data-id="poller" tabindex="0" role="button" aria-label="Alert poller"><rect x="770" y="520" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="532" r="4"/><text class="t" x="860" y="548" text-anchor="middle">Alert poller</text><text class="s" x="860" y="566" text-anchor="middle">level ≥ 7 · dedupe</text></g>
+  <g class="node st-live" data-id="triage" tabindex="0" role="button" aria-label="Triage agent"><rect x="560" y="520" width="150" height="66" rx="6"/><circle class="dot" cx="698" cy="532" r="4"/><text class="t" x="635" y="548" text-anchor="middle">Triage agent</text><text class="s" x="635" y="566" text-anchor="middle">small, cheap model</text></g>
+  <g class="node st-live" data-id="invest" tabindex="0" role="button" aria-label="Investigation agent"><rect x="330" y="520" width="170" height="66" rx="6"/><circle class="dot" cx="488" cy="532" r="4"/><text class="t" x="415" y="548" text-anchor="middle">Investigation agent</text><text class="s" x="415" y="566" text-anchor="middle">tool-use loop</text></g>
   <g class="node st-planned" data-id="iris" tabindex="0" role="button" aria-label="DFIR-IRIS"><rect x="110" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="532" r="4"/><text class="t" x="190" y="548" text-anchor="middle">DFIR-IRIS</text><text class="s" x="190" y="566" text-anchor="middle">case · timeline · IOCs</text></g>
   <g class="node st-planned" data-id="approval" tabindex="0" role="button" aria-label="Human approval"><rect x="110" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="662" r="4"/><text class="t" x="190" y="678" text-anchor="middle">You approve</text><text class="s" x="190" y="696" text-anchor="middle">human in the loop</text></g>
-  <g class="node st-planned" data-id="openrouter" tabindex="0" role="button" aria-label="OpenRouter"><rect x="330" y="650" width="380" height="66" rx="6"/><circle class="dot" cx="698" cy="662" r="4"/><text class="t" x="520" y="678" text-anchor="middle">OpenRouter</text><text class="s" x="520" y="696" text-anchor="middle">one API · model per task · credit cap</text></g>
-  <g class="node st-planned" data-id="tools" tabindex="0" role="button" aria-label="SOC tools MCP server"><rect x="770" y="650" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="662" r="4"/><text class="t" x="860" y="678" text-anchor="middle">SOC tools (MCP)</text><text class="s" x="860" y="696" text-anchor="middle">search · pivot · enrich</text></g>
+  <g class="node st-live" data-id="openrouter" tabindex="0" role="button" aria-label="Anthropic API and OpenRouter"><rect x="330" y="650" width="380" height="66" rx="6"/><circle class="dot" cx="698" cy="662" r="4"/><text class="t" x="520" y="678" text-anchor="middle">Anthropic API · OpenRouter</text><text class="s" x="520" y="696" text-anchor="middle">Haiku 5.5 triage · Sonnet 5.5 investigation</text></g>
+  <g class="node st-building" data-id="tools" tabindex="0" role="button" aria-label="SOC tools MCP server"><rect x="770" y="650" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="662" r="4"/><text class="t" x="860" y="678" text-anchor="middle">SOC tools (MCP)</text><text class="s" x="860" y="696" text-anchor="middle">search · pivot · enrich</text></g>
   <g class="node st-planned" data-id="claude" tabindex="0" role="button" aria-label="Claude Code"><rect x="1010" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="662" r="4"/><text class="t" x="1090" y="678" text-anchor="middle">Claude Code</text><text class="s" x="1090" y="696" text-anchor="middle">ad-hoc hunting</text></g>
   <g class="node st-planned" data-id="eval" tabindex="0" role="button" aria-label="Eval harness"><rect x="1010" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="532" r="4"/><text class="t" x="1090" y="548" text-anchor="middle">Eval harness</text><text class="s" x="1090" y="566" text-anchor="middle">atomic → expected alert</text></g>
 </svg>
@@ -308,7 +308,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
     <div class="phase"><div class="n">Phase 0</div><div><span class="pill live">done</span> Hyper-V switch and VMs, NAT and containment, Zeek and Suricata with community-id, verified with a test alert.</div></div>
     <div class="phase"><div class="n">Phase 1</div><div><span class="pill live">done</span> Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules.</div></div>
     <div class="phase"><div class="n">Phase 2</div><div><span class="pill live">done</span> 17 atomics with Defender on, a coverage matrix that subtracts harness noise, and new rules for LSASS dumping, cron, setuid, schtasks and log clearing: 7 of 17 detected became 12 of 17.</div></div>
-    <div class="phase"><div class="n">Phase 3</div><div><span class="pill planned">next</span> Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response.</div></div>
+    <div class="phase"><div class="n">Phase 3</div><div><span class="pill building">in progress</span> Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response.</div></div>
     <div class="phase"><div class="n">Phase 4</div><div><span class="pill planned">planned</span> Eval harness: scheduled atomics produce a scorecard of detection, verdict accuracy, latency and cost per alert.</div></div>
   </div>
 </section>
@@ -367,37 +367,37 @@ const NODES = {
     inputs: "Queries against the indexer",
     outputs: "Your eyes",
     repo: "n/a" },
-  poller: { name: "Alert poller", status: "planned", phase: "Phase 3",
+  poller: { name: "Alert poller", status: "live", phase: "Phase 3, verified",
     role: "Front door of the agentic plane. Pulls only alerts worth money, and groups duplicates.",
     tools: [["Python + opensearch-py", "Apache-2.0"]],
     runs: "WSL2",
     inputs: "New wazuh-alerts-* documents with rule.level ≥ 7 since the last checkpoint",
     outputs: "Alert bundles (same host, rule and time window) for triage",
     repo: "agent/ (planned)" },
-  triage: { name: "Triage agent", status: "planned", phase: "Phase 3",
+  triage: { name: "Triage agent", status: "live", phase: "Phase 3, verified",
     role: "Fast first pass: map to ATT&CK, decide benign, suspicious or escalate, and explain why in two lines.",
     tools: [["Small, cheap model via OpenRouter", "paid API"]],
     runs: "WSL2",
     inputs: "Alert bundle plus a little host context",
     outputs: "Verdict, ATT&CK technique and confidence; escalations go to investigation",
     repo: "agent/ (planned)" },
-  invest: { name: "Investigation agent", status: "planned", phase: "Phase 3",
+  invest: { name: "Investigation agent", status: "live", phase: "Phase 3, verified",
     role: "The analyst. Runs a tool-use loop until it can explain what happened, or gives up and says what it couldn't find.",
     tools: [["Stronger model via OpenRouter", "paid API"], ["SOC tools over MCP", "this repo"]],
     runs: "WSL2",
     inputs: "Escalated alert bundles",
     outputs: "Narrative, timeline, IOCs, a proposed response, and a DFIR-IRIS case",
     repo: "agent/ (planned)" },
-  tools: { name: "SOC tools (MCP server)", status: "planned", phase: "Phase 3",
+  tools: { name: "SOC tools (MCP server)", status: "building", phase: "Phase 3: tools live, MCP next",
     role: "One set of tools for both the autonomous agent and you in Claude Code. Read-only by design; the single write tool proposes rather than acts.",
     tools: [["Model Context Protocol server (Python)", "this repo"]],
     runs: "WSL2",
     inputs: "Tool calls such as search_alerts, search_archives, process_tree, zeek_by_community_id, intel_lookup",
     outputs: "Compact JSON results sized for an LLM context window",
     repo: "agent/mcp/ (planned)" },
-  openrouter: { name: "OpenRouter", status: "planned", phase: "Phase 3",
-    role: "One OpenAI-compatible API key that reaches many models, so each task can use the cheapest model that does it well.",
-    tools: [["OpenRouter", "commercial API, not OSS"]],
+  openrouter: { name: "Anthropic API · OpenRouter", status: "live", phase: "Phase 3, verified",
+    role: "Model access. Claude models go straight to the Anthropic API (prompt caching, server-side refusal fallback); any other model can be routed through OpenRouter. The model per role is one line in .env.",
+    tools: [["Anthropic API: claude-haiku-5-5 (triage), claude-sonnet-5-5 (investigation)", "commercial API, not OSS"], ["OpenRouter (optional)", "commercial API, not OSS"]],
     runs: "Cloud",
     inputs: "Prompts and tool schemas from both agents",
     outputs: "Completions; token usage is logged per alert for cost tracking",
