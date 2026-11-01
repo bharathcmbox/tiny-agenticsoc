@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tiny-agenticsoc architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Plan: a SOC "wiring diagram". Cool slate neutrals, one signal-blue accent for the traced path,
+   semantic green/amber/grey for live/building/planned. Plex Sans for prose, Plex Mono for ports, indices and paths.
+   Layout: intro, full-width diagram, then controls + details side by side, then reference sections. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --ink: #15212c;
+  --muted: #5a6977;
+  --line: #c6d0d9;
+  --accent: #0a6c95;
+  --accent-soft: #e2f0f7;
+  --live: #23845a;
+  --build: #b26b00;
+  --plan: #7b8996;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151c; --surface: #16202a; --ink: #e2e9ef; --muted: #96a6b4; --line: #2d3b48;
+    --accent: #52b6dc; --accent-soft: #15344a; --live: #4cc38a; --build: #e0a23a; --plan: #7f8e9b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151c; --surface: #16202a; --ink: #e2e9ef; --muted: #96a6b4; --line: #2d3b48;
+  --accent: #52b6dc; --accent-soft: #15344a; --live: #4cc38a; --build: #e0a23a; --plan: #7f8e9b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--sans); }
+main { max-width: 1240px; margin: 0 auto; padding: 40px 20px 80px; display: grid; gap: 48px; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0 0 12px; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0 0 12px; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+a { color: var(--accent); }
+.kicker { font: 500 0.8rem var(--mono); color: var(--muted); letter-spacing: 0.04em; margin-bottom: 8px; }
+.lede { font-size: 1.12rem; color: var(--ink); }
+
+/* diagram */
+figure { margin: 0; }
+.diagram-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; }
+.diagram-wrap svg { display: block; width: 100%; min-width: 900px; height: auto; color: var(--ink); }
+figcaption { color: var(--muted); font-size: 0.92rem; margin-top: 10px; max-width: 90ch; }
+
+svg .zone rect { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 3 4; }
+svg .zone.labnet rect { stroke: var(--muted); }
+svg .zone text { font: 500 11px var(--mono); fill: var(--muted); }
+svg .node { cursor: pointer; outline: none; }
+svg .node rect { fill: var(--surface); stroke: var(--plan); stroke-width: 1.5; transition: fill .15s, stroke .15s; }
+svg .node.st-planned rect { stroke-dasharray: 6 4; }
+svg .node.st-live rect { stroke: var(--live); stroke-width: 2; }
+svg .node.st-building rect { stroke: var(--build); stroke-width: 2; }
+svg .node .t { font: 600 13px var(--sans); fill: var(--ink); }
+svg .node .s { font: 400 10.5px var(--mono); fill: var(--muted); }
+svg .node .dot { stroke: none; }
+svg .node.st-live .dot { fill: var(--live); }
+svg .node.st-building .dot { fill: var(--build); }
+svg .node.st-planned .dot { fill: none; stroke: var(--plan); stroke-width: 1.5; stroke-dasharray: 2 2; }
+svg .node:hover rect, svg .node:focus-visible rect { fill: var(--accent-soft); }
+svg .node:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }
+svg .node.sel rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
+svg .edge path { fill: none; stroke: var(--muted); stroke-width: 1.4; marker-end: url(#ah); }
+svg .edge.dashed path { stroke-dasharray: 5 4; }
+svg .edge text { font: 400 11px var(--sans); fill: var(--muted); }
+svg .mk { fill: var(--muted); }
+svg .mk-a { fill: var(--accent); }
+svg .node, svg .edge, svg .zone { transition: opacity .2s; }
+svg.tracing .edge:not(.hl), svg.tracing .node:not(.hl) { opacity: 0.16; }
+svg.tracing .zone { opacity: 0.5; }
+svg .edge.hl path { stroke: var(--accent); stroke-width: 2.4; marker-end: url(#ah-a); }
+svg .edge.hl text { fill: var(--accent); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { svg .node, svg .edge, svg .zone, svg .node rect { transition: none; } }
+
+/* controls + details */
+.explore { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 20px; align-items: start; }
+@media (max-width: 760px) { .explore { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+.flows { display: grid; gap: 8px; margin: 10px 0 18px; }
+.flows button {
+  font: 500 0.92rem var(--sans); text-align: left; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; cursor: pointer;
+  display: grid; gap: 2px;
+}
+.flows button span { font-weight: 400; font-size: 0.82rem; color: var(--muted); }
+.flows button:hover { border-color: var(--accent); }
+.flows button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.flows button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.legend { display: grid; gap: 8px; font-size: 0.88rem; color: var(--muted); }
+.legend div { display: flex; align-items: center; gap: 10px; }
+.sw { width: 26px; height: 14px; border-radius: 3px; border: 2px solid var(--plan); flex: none; }
+.sw.live { border-color: var(--live); }
+.sw.build { border-color: var(--build); }
+.sw.plan { border-style: dashed; }
+.sw.edge { border: none; height: 0; border-top: 2px solid var(--muted); border-radius: 0; }
+.sw.edge.dash { border-top-style: dashed; }
+
+.detail h3 { font-size: 1.3rem; margin-bottom: 4px; }
+.detail .role { color: var(--muted); margin-bottom: 14px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 0.78rem var(--mono); padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.live { color: var(--live); }
+.pill.building { color: var(--build); }
+.pill.planned { color: var(--plan); }
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 8px 16px; margin: 16px 0 0; font-size: 0.94rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+.kv ul { margin: 0; padding-left: 18px; }
+@media (max-width: 480px) { .kv { grid-template-columns: 1fr; } .kv dt { margin-top: 6px; } }
+.lic { font-family: var(--mono); font-size: 0.8em; color: var(--muted); }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; min-width: 760px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg); }
+tr:last-child td { border-bottom: none; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.86rem; white-space: nowrap; }
+
+/* walkthrough */
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 14px; max-width: 80ch; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+ol.steps li::before { content: counter(s); font: 600 0.85rem var(--mono); color: var(--accent); border: 1.5px solid var(--accent); border-radius: 50%; width: 28px; height: 28px; display: grid; place-items: center; }
+ol.steps b { font-weight: 600; }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.phase { display: grid; grid-template-columns: 90px 1fr; gap: 6px 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.phase:last-child { border-bottom: none; }
+.phase .n { font: 500 0.85rem var(--mono); color: var(--muted); }
+footer { color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+
+<header class="prose">
+  <div class="kicker">tiny-agenticsoc · architecture · status as of 1 Nov 2026</div>
+  <h1>An agentic SOC on one laptop</h1>
+  <p class="lede">A small but realistic security operations center: real endpoint and network telemetry, a real SIEM, real (contained) attacks, and LLM agents that triage and investigate the alerts, with a human approving every response.</p>
+  <p>Almost everything is open source. The lab runs on a single Windows 11 laptop under Hyper-V, so hosting costs nothing; the only spend is LLM tokens through OpenRouter, behind a hard credit cap.</p>
+</header>
+
+<section>
+  <figure>
+    <div class="diagram-wrap">
+<svg id="dia" viewBox="0 0 1200 790" role="img" aria-label="Data flows left to right through the lab: Atomic Red Team runs techniques on the victims, Sysmon, auditd, Zeek and Suricata record them, Wazuh agents ship events to the Wazuh manager, which stores alerts and raw events in the Wazuh indexer. Below, the agentic plane flows right to left: a poller reads new alerts, a triage agent and an investigation agent reason over them using SOC tools and models via OpenRouter, open a case in DFIR-IRIS, and a human approves any active response sent back through Wazuh.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-a" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <!-- zones -->
+  <g class="zone labnet"><rect x="20" y="44" width="980" height="396" rx="10"/><text x="34" y="62">LabNet 10.10.10.0/24 · Hyper-V internal switch · data plane</text></g>
+  <g class="zone"><rect x="220" y="70" width="200" height="230" rx="8"/><text x="230" y="86">victims · mirror sources</text></g>
+  <g class="zone"><rect x="510" y="76" width="480" height="354" rx="8"/><text x="522" y="94">wazuh VM · 10.10.10.10</text></g>
+  <g class="zone"><rect x="20" y="480" width="1160" height="290" rx="10"/><text x="34" y="760">agentic plane · Python in WSL2 · flows right to left</text></g>
+
+  <!-- edges -->
+  <g class="edge" data-id="e-eval" data-flows="eval" data-from="eval" data-to="art"><path d="M1090,520 V24 H10 V183 H30"/><text x="600" y="18" text-anchor="middle">drives scheduled atomic runs, then scores what the SOC caught</text></g>
+  <g class="edge" data-id="e-art" data-flows="telemetry eval" data-from="art" data-to="win lin"><path d="M160,183 H220"/><text x="190" y="175" text-anchor="middle">runs TTPs</text></g>
+  <g class="edge dashed" data-id="e-mirror" data-flows="telemetry" data-from="win lin" data-to="sensor"><path d="M320,300 V344"/><text x="328" y="326">port mirror</text></g>
+  <g class="edge" data-id="e-win" data-flows="telemetry detect" data-from="win" data-to="manager"><path d="M404,129 H470 V180 H530"/></g>
+  <g class="edge" data-id="e-lin" data-flows="telemetry detect" data-from="lin" data-to="manager"><path d="M404,253 H530"/><text x="470" y="245" text-anchor="middle">events :1514</text></g>
+  <g class="edge" data-id="e-sensor" data-flows="telemetry detect" data-from="sensor" data-to="manager"><path d="M420,382 H470 V262 H530"/></g>
+  <g class="edge" data-id="e-filebeat" data-flows="telemetry detect" data-from="manager" data-to="indexer"><path d="M710,250 H770"/><text x="740" y="242" text-anchor="middle">Filebeat</text></g>
+  <g class="edge" data-id="e-dash" data-flows="detect" data-from="indexer" data-to="dashboard"><path d="M860,196 V152"/><text x="868" y="178">queries</text></g>
+  <g class="edge" data-id="e-poll" data-flows="detect agent" data-from="indexer" data-to="poller"><path d="M860,316 V520"/><text x="852" y="470" text-anchor="end">REST :9200 · new alerts</text></g>
+  <g class="edge" data-id="e-tri" data-flows="agent" data-from="poller" data-to="triage"><path d="M770,553 H710"/><text x="740" y="545" text-anchor="middle">alerts</text></g>
+  <g class="edge" data-id="e-esc" data-flows="agent" data-from="triage" data-to="invest"><path d="M560,553 H500"/><text x="530" y="545" text-anchor="middle">escalate</text></g>
+  <g class="edge" data-id="e-case" data-flows="agent response" data-from="invest" data-to="iris"><path d="M330,553 H270"/><text x="300" y="545" text-anchor="middle">case</text></g>
+  <g class="edge" data-id="e-or1" data-flows="agent" data-from="invest" data-to="openrouter"><path d="M415,586 V650"/><text x="423" y="626">prompts</text></g>
+  <g class="edge" data-id="e-or2" data-flows="agent" data-from="triage" data-to="openrouter"><path d="M680,586 V650"/><text x="688" y="626">prompts</text></g>
+  <g class="edge" data-id="e-tools" data-flows="agent" data-from="invest" data-to="tools"><path d="M470,586 V612 H860 V650"/><text x="770" y="606" text-anchor="middle">tool calls</text></g>
+  <g class="edge" data-id="e-search" data-flows="agent" data-from="tools" data-to="indexer"><path d="M950,672 H975 V290 H950"/><text x="980" y="470">search</text></g>
+  <g class="edge" data-id="e-mcp" data-flows="agent" data-from="claude" data-to="tools"><path d="M1010,690 H950"/><text x="980" y="682" text-anchor="middle">MCP</text></g>
+  <g class="edge" data-id="e-approve" data-flows="response" data-from="iris" data-to="approval"><path d="M190,586 V650"/><text x="198" y="626">proposed action</text></g>
+  <g class="edge" data-id="e-ar" data-flows="response" data-from="approval" data-to="manager"><path d="M110,683 H60 V462 H620 V290"/><text x="340" y="456" text-anchor="middle">approved active response · Wazuh API :55000</text></g>
+
+  <!-- nodes -->
+  <g class="node st-planned" data-id="art" tabindex="0" role="button" aria-label="Atomic Red Team"><rect x="30" y="150" width="130" height="66" rx="6"/><circle class="dot" cx="148" cy="162" r="4"/><text class="t" x="95" y="178" text-anchor="middle">Atomic Red Team</text><text class="s" x="95" y="196" text-anchor="middle">adversary emulation</text></g>
+  <g class="node st-building" data-id="win" tabindex="0" role="button" aria-label="win-victim"><rect x="236" y="96" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="108" r="4"/><text class="t" x="320" y="124" text-anchor="middle">win-victim</text><text class="s" x="320" y="142" text-anchor="middle">Sysmon · Wazuh agent</text></g>
+  <g class="node st-live" data-id="lin" tabindex="0" role="button" aria-label="lin-victim"><rect x="236" y="220" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="232" r="4"/><text class="t" x="320" y="248" text-anchor="middle">lin-victim</text><text class="s" x="320" y="266" text-anchor="middle">auditd · Wazuh agent</text></g>
+  <g class="node st-live" data-id="sensor" tabindex="0" role="button" aria-label="sensor-gw"><rect x="220" y="344" width="200" height="76" rx="6"/><circle class="dot" cx="408" cy="356" r="4"/><text class="t" x="320" y="368" text-anchor="middle">sensor-gw</text><text class="s" x="320" y="386" text-anchor="middle">Zeek · Suricata</text><text class="s" x="320" y="402" text-anchor="middle">NAT gw · DNS/DHCP</text></g>
+  <g class="node st-live" data-id="manager" tabindex="0" role="button" aria-label="Wazuh manager"><rect x="530" y="150" width="180" height="140" rx="6"/><circle class="dot" cx="698" cy="162" r="4"/><text class="t" x="620" y="182" text-anchor="middle">Wazuh manager</text><text class="s" x="620" y="210" text-anchor="middle">remoted :1514</text><text class="s" x="620" y="230" text-anchor="middle">decoders + rules</text><text class="s" x="620" y="250" text-anchor="middle">local_rules.xml</text><text class="s" x="620" y="270" text-anchor="middle">active response</text></g>
+  <g class="node st-live" data-id="dashboard" tabindex="0" role="button" aria-label="Wazuh dashboard"><rect x="770" y="92" width="180" height="60" rx="6"/><circle class="dot" cx="938" cy="104" r="4"/><text class="t" x="860" y="117" text-anchor="middle">Wazuh dashboard</text><text class="s" x="860" y="135" text-anchor="middle">for humans · :443</text></g>
+  <g class="node st-live" data-id="indexer" tabindex="0" role="button" aria-label="Wazuh indexer"><rect x="770" y="196" width="180" height="120" rx="6"/><circle class="dot" cx="938" cy="208" r="4"/><text class="t" x="860" y="224" text-anchor="middle">Wazuh indexer</text><text class="s" x="860" y="244" text-anchor="middle">OpenSearch · :9200</text><text class="s" x="860" y="270" text-anchor="middle">wazuh-alerts-*</text><text class="s" x="860" y="290" text-anchor="middle">wazuh-archives-*</text></g>
+  <g class="node st-planned" data-id="poller" tabindex="0" role="button" aria-label="Alert poller"><rect x="770" y="520" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="532" r="4"/><text class="t" x="860" y="548" text-anchor="middle">Alert poller</text><text class="s" x="860" y="566" text-anchor="middle">level ≥ 7 · dedupe</text></g>
+  <g class="node st-planned" data-id="triage" tabindex="0" role="button" aria-label="Triage agent"><rect x="560" y="520" width="150" height="66" rx="6"/><circle class="dot" cx="698" cy="532" r="4"/><text class="t" x="635" y="548" text-anchor="middle">Triage agent</text><text class="s" x="635" y="566" text-anchor="middle">small, cheap model</text></g>
+  <g class="node st-planned" data-id="invest" tabindex="0" role="button" aria-label="Investigation agent"><rect x="330" y="520" width="170" height="66" rx="6"/><circle class="dot" cx="488" cy="532" r="4"/><text class="t" x="415" y="548" text-anchor="middle">Investigation agent</text><text class="s" x="415" y="566" text-anchor="middle">tool-use loop</text></g>
+  <g class="node st-planned" data-id="iris" tabindex="0" role="button" aria-label="DFIR-IRIS"><rect x="110" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="532" r="4"/><text class="t" x="190" y="548" text-anchor="middle">DFIR-IRIS</text><text class="s" x="190" y="566" text-anchor="middle">case · timeline · IOCs</text></g>
+  <g class="node st-planned" data-id="approval" tabindex="0" role="button" aria-label="Human approval"><rect x="110" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="662" r="4"/><text class="t" x="190" y="678" text-anchor="middle">You approve</text><text class="s" x="190" y="696" text-anchor="middle">human in the loop</text></g>
+  <g class="node st-planned" data-id="openrouter" tabindex="0" role="button" aria-label="OpenRouter"><rect x="330" y="650" width="380" height="66" rx="6"/><circle class="dot" cx="698" cy="662" r="4"/><text class="t" x="520" y="678" text-anchor="middle">OpenRouter</text><text class="s" x="520" y="696" text-anchor="middle">one API · model per task · credit cap</text></g>
+  <g class="node st-planned" data-id="tools" tabindex="0" role="button" aria-label="SOC tools MCP server"><rect x="770" y="650" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="662" r="4"/><text class="t" x="860" y="678" text-anchor="middle">SOC tools (MCP)</text><text class="s" x="860" y="696" text-anchor="middle">search · pivot · enrich</text></g>
+  <g class="node st-planned" data-id="claude" tabindex="0" role="button" aria-label="Claude Code"><rect x="1010" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="662" r="4"/><text class="t" x="1090" y="678" text-anchor="middle">Claude Code</text><text class="s" x="1090" y="696" text-anchor="middle">ad-hoc hunting</text></g>
+  <g class="node st-planned" data-id="eval" tabindex="0" role="button" aria-label="Eval harness"><rect x="1010" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="532" r="4"/><text class="t" x="1090" y="548" text-anchor="middle">Eval harness</text><text class="s" x="1090" y="566" text-anchor="middle">atomic → expected alert</text></g>
+</svg>
+    </div>
+    <figcaption>The top band is the data plane: attacks run on the victims, host and network sensors record them, and Wazuh decodes, detects and stores everything. The bottom band is the agentic plane: it reads alerts out of storage, reasons over them with tools and LLMs, writes a case, and can only act on the lab after a human approves. Click any box for details.</figcaption>
+  </figure>
+</section>
+
+<section class="explore">
+  <div class="card">
+    <h3>Trace a path</h3>
+    <div class="flows" role="group" aria-label="Highlight a flow">
+      <button type="button" data-flow="telemetry" aria-pressed="false">Telemetry<span>attack → sensors → manager → storage</span></button>
+      <button type="button" data-flow="detect" aria-pressed="false">Detection<span>events become alerts you can see and query</span></button>
+      <button type="button" data-flow="agent" aria-pressed="false">Agent loop<span>poll → triage → investigate → case</span></button>
+      <button type="button" data-flow="response" aria-pressed="false">Response<span>case → human approval → active response</span></button>
+      <button type="button" data-flow="eval" aria-pressed="false">Evaluation<span>scheduled atomics score the whole SOC</span></button>
+    </div>
+    <div class="legend" aria-label="Legend">
+      <div><span class="sw live"></span>Live and verified</div>
+      <div><span class="sw build"></span>Being built now (Phase 1)</div>
+      <div><span class="sw plan"></span>Planned (Phases 2 to 4)</div>
+      <div><span class="sw edge"></span>Data or control flow</div>
+      <div><span class="sw edge dash"></span>Packet copy (Hyper-V port mirror)</div>
+    </div>
+  </div>
+  <div class="card detail" id="detail" aria-live="polite"></div>
+</section>
+
+<section>
+  <h2>The jobs, and who does each one</h2>
+  <p class="prose">A SOC has the same five jobs whatever it costs. This table maps each job to the component that does it in this lab.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Job</th><th>What happens</th><th>Component</th><th>License</th><th>Runs on</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Simulate</td><td>Run real ATT&amp;CK techniques on purpose</td><td>Atomic Red Team + Invoke-AtomicRedTeam</td><td class="num">MIT</td><td>inside victims</td><td><span class="pill planned">phase 2</span></td></tr>
+        <tr><td rowspan="3">Generate</td><td>Process, registry, network, PowerShell events on Windows</td><td>Sysmon (sysmon-modular config)</td><td class="num">free, closed source</td><td>win-victim</td><td><span class="pill building">phase 1</span></td></tr>
+        <tr><td>Syscalls, execs, file and user changes on Linux</td><td>auditd (Neo23x0 ruleset)</td><td class="num">GPL-2.0</td><td>lin-victim</td><td><span class="pill live">live</span></td></tr>
+        <tr><td>Connection logs, protocol metadata, signature alerts</td><td>Zeek, Suricata (ET Open rules)</td><td class="num">BSD-3 / GPL-2.0</td><td>sensor-gw</td><td><span class="pill live">live</span></td></tr>
+        <tr><td>Ingest</td><td>Collect, ship, decode, apply detection rules</td><td>Wazuh agent → Wazuh manager</td><td class="num">GPL-2.0</td><td>every host → wazuh VM</td><td><span class="pill live">live</span></td></tr>
+        <tr><td>Store</td><td>Index alerts and every raw event, searchable</td><td>Filebeat → Wazuh indexer (OpenSearch)</td><td class="num">Apache-2.0</td><td>wazuh VM</td><td><span class="pill live">live</span></td></tr>
+        <tr><td>Look</td><td>Dashboards and search for humans</td><td>Wazuh dashboard</td><td class="num">Apache-2.0 / GPL-2.0</td><td>wazuh VM</td><td><span class="pill live">live</span></td></tr>
+        <tr><td rowspan="3">Reason</td><td>Decide what matters, investigate, explain</td><td>Triage + investigation agents (Python)</td><td class="num">this repo</td><td>WSL2</td><td><span class="pill planned">phase 3</span></td></tr>
+        <tr><td>Give agents and Claude Code the same SOC tools</td><td>MCP server</td><td class="num">this repo</td><td>WSL2</td><td><span class="pill planned">phase 3</span></td></tr>
+        <tr><td>Route each task to a suitable model</td><td>OpenRouter</td><td class="num">paid API</td><td>cloud</td><td><span class="pill planned">phase 3</span></td></tr>
+        <tr><td>Record</td><td>Cases, timelines, IOCs, analyst notes</td><td>DFIR-IRIS</td><td class="num">LGPL-3.0</td><td>WSL2 (Docker)</td><td><span class="pill planned">phase 3</span></td></tr>
+        <tr><td>Act</td><td>Isolate host, kill process, block IP, after approval</td><td>Wazuh active response</td><td class="num">GPL-2.0</td><td>manager → agents</td><td><span class="pill planned">phase 3</span></td></tr>
+        <tr><td>Measure</td><td>Did we detect it, judge it right, and at what cost?</td><td>Eval harness</td><td class="num">this repo</td><td>WSL2</td><td><span class="pill planned">phase 4</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Follow one attack through the system</h2>
+  <p class="prose">Take a single technique, <code>T1059.001</code> (malicious PowerShell), from the moment it runs to the moment the case closes.</p>
+  <ol class="steps">
+    <li><div><b>Simulate.</b> The eval harness asks Invoke-AtomicRedTeam on <code>win-victim</code> to run T1059.001 and records what it expects to be detected.</div></li>
+    <li><div><b>Generate.</b> Sysmon logs a process-create event (ID 1) with the full command line and parent process, and Windows logs PowerShell script block event 4104. If the script calls out to the internet, Zeek logs the connection and DNS query, and Suricata may fire a signature. Both stamp the same <code>community_id</code> on the flow.</div></li>
+    <li><div><b>Ingest.</b> The Wazuh agent forwards the events over port 1514. On the manager, decoders turn them into fields and rules give them a level. A suspicious PowerShell rule might reach level 10 or higher.</div></li>
+    <li><div><b>Store.</b> Filebeat writes the alert to <code>wazuh-alerts-*</code>, and every raw event, alerting or not, to <code>wazuh-archives-*</code>.</div></li>
+    <li><div><b>Triage.</b> The poller picks up the new alert (level 7 or above) and groups it with related alerts from the same host and time window. A small, cheap model maps it to ATT&amp;CK and gives a verdict: benign, suspicious or escalate.</div></li>
+    <li><div><b>Investigate.</b> On escalation, a stronger model runs a tool-use loop. It rebuilds the process tree from Sysmon, pivots on the <code>community_id</code> into Zeek and Suricata, checks IPs and hashes against threat intel, and writes up what happened.</div></li>
+    <li><div><b>Record.</b> The agent opens a DFIR-IRIS case with the timeline, evidence, IOCs and a proposed response.</div></li>
+    <li><div><b>Act.</b> You approve or reject. On approval, the agent calls the Wazuh API and the manager pushes the active response, for example killing the process or isolating the host.</div></li>
+    <li><div><b>Measure.</b> The harness checks the result: was it detected, was the verdict right, how long did it take, and how many tokens and dollars did it cost.</div></li>
+  </ol>
+</section>
+
+<section class="grid2">
+  <div>
+    <h2>The lab underneath</h2>
+    <p>Four Hyper-V VMs on an internal switch. Ubuntu VMs are built from the official cloud image and configured by cloud-init, so the whole lab can be rebuilt from the repo.</p>
+    <div class="table-wrap">
+      <table style="min-width:0">
+        <thead><tr><th>VM</th><th>Address</th><th>RAM</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="num">sensor-gw</td><td class="num">10.10.10.1</td><td class="num">2 GB</td><td>NAT gateway, DNS/DHCP, Zeek, Suricata</td></tr>
+          <tr><td class="num">wazuh</td><td class="num">10.10.10.10</td><td class="num">6 GB</td><td>manager, indexer, dashboard</td></tr>
+          <tr><td class="num">win-victim</td><td class="num">10.10.10.20</td><td class="num">2–4 GB</td><td>Windows Server 2022 eval</td></tr>
+          <tr><td class="num">lin-victim</td><td class="num">10.10.10.21</td><td class="num">1–1.5 GB</td><td>Ubuntu 24.04</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div>
+    <h2>Guardrails</h2>
+    <p><b>Containment.</b> All victim traffic leaves through <code>sensor-gw</code>, which drops anything bound for private, CGNAT or link-local ranges. Attacks can reach the internet but not the home network or the laptop. The host also blocks unsolicited inbound traffic from the lab.</p>
+    <p><b>Visibility.</b> Victim NICs are Hyper-V port-mirror sources, so the sensor also sees lateral, victim-to-victim traffic that never touches the gateway.</p>
+    <p><b>Cost.</b> Hosting is free. LLM calls only go out for alerts at level 7 or above, cheap models handle triage, and the OpenRouter account has a hard credit cap. Each case records its own token cost.</p>
+    <p><b>Authority.</b> Agents read freely, but every action on the lab needs a human click.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Roadmap</h2>
+  <div class="card">
+    <div class="phase"><div class="n">Phase 0</div><div><span class="pill live">done</span> Hyper-V switch and VMs, NAT and containment, Zeek and Suricata with community-id, verified with a test alert.</div></div>
+    <div class="phase"><div class="n">Phase 1</div><div><span class="pill building">in progress</span> Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules.</div></div>
+    <div class="phase"><div class="n">Phase 2</div><div><span class="pill planned">next</span> About ten curated atomics and a detection-coverage matrix of what fired and what did not.</div></div>
+    <div class="phase"><div class="n">Phase 3</div><div><span class="pill planned">planned</span> Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response.</div></div>
+    <div class="phase"><div class="n">Phase 4</div><div><span class="pill planned">planned</span> Eval harness: scheduled atomics produce a scorecard of detection, verdict accuracy, latency and cost per alert.</div></div>
+  </div>
+</section>
+
+<footer>Built hands-on with Claude Code. Source: github.com/bharathcmbox/tiny-agenticsoc</footer>
+</main>
+
+<script>
+const NODES = {
+  art: { name: "Atomic Red Team", status: "planned", phase: "Phase 2",
+    role: "The attacker. A library of small, documented tests for MITRE ATT&CK techniques, each with a cleanup step.",
+    tools: [["Atomic Red Team", "MIT"], ["Invoke-AtomicRedTeam", "MIT"]],
+    runs: "Inside win-victim and lin-victim only, never on the host or in WSL.",
+    inputs: "Technique IDs chosen by you or the eval harness",
+    outputs: "Real process, file, registry and network activity for the sensors to catch",
+    repo: "lab/atomics/ (planned)" },
+  win: { name: "win-victim", status: "building", phase: "Phase 1",
+    role: "Windows endpoint target. Its telemetry is the richest in the lab.",
+    tools: [["Windows Server 2022 eval", "180-day evaluation"], ["Sysmon", "free, closed source"], ["sysmon-modular config", "MIT"], ["Wazuh agent", "GPL-2.0"]],
+    runs: "Hyper-V VM, 10.10.10.20, 2 to 4 GB dynamic RAM, NIC mirrored to sensor-gw",
+    inputs: "Atomic tests",
+    outputs: "Sysmon, PowerShell and Security event channels to the Wazuh manager on :1514",
+    repo: "lab/wazuh/groups/windows/" },
+  lin: { name: "lin-victim", status: "live", phase: "Phase 1, verified",
+    role: "Linux endpoint target.",
+    tools: [["Ubuntu 24.04 cloud image", "free"], ["auditd + Neo23x0 rules", "GPL-2.0"], ["Wazuh agent with FIM", "GPL-2.0"]],
+    runs: "Hyper-V VM, 10.10.10.21, 1 to 1.5 GB dynamic RAM, NIC mirrored to sensor-gw",
+    inputs: "Atomic tests",
+    outputs: "audit.log records and file-integrity changes to the Wazuh manager",
+    repo: "lab/cloud-init/lin-victim/, lab/wazuh/groups/linux/" },
+  sensor: { name: "sensor-gw", status: "live", phase: "Phase 0, verified",
+    role: "Network sensor and the only way out of the lab. It sees every packet the victims send.",
+    tools: [["Zeek 9 (LTS)", "BSD-3-Clause"], ["Suricata 8 + ET Open rules", "GPL-2.0"], ["nftables", "GPL-2.0"], ["dnsmasq", "GPL-2.0"], ["Wazuh agent", "GPL-2.0"]],
+    runs: "Hyper-V VM with three NICs: wan (Default Switch), lan 10.10.10.1, mon (mirror destination, no IP)",
+    inputs: "Routed victim traffic plus Hyper-V port-mirror copies on the mon NIC",
+    outputs: "Zeek JSON logs and Suricata eve.json, both with community_id, shipped by the Wazuh agent",
+    repo: "lab/cloud-init/sensor-gw/, lab/wazuh/groups/sensor/" },
+  manager: { name: "Wazuh manager", status: "live", phase: "Phase 1, verified",
+    role: "Ingest and detection. Receives events from every agent, decodes them into fields and runs the rule engine.",
+    tools: [["wazuh-remoted", "GPL-2.0"], ["wazuh-analysisd (decoders, rules)", "GPL-2.0"], ["Wazuh API :55000", "GPL-2.0"]],
+    runs: "wazuh VM, 10.10.10.10",
+    inputs: "Agent events on :1514; agent enrollment on :1515",
+    outputs: "alerts.json (rule matched) and archives.json (everything) for Filebeat; active-response commands back to agents",
+    repo: "lab/wazuh/manager/" },
+  indexer: { name: "Wazuh indexer", status: "live", phase: "Phase 1, verified",
+    role: "Storage and search: the SIEM's database. Alerts and raw events land in separate daily indices.",
+    tools: [["Wazuh indexer (OpenSearch fork)", "Apache-2.0"], ["Filebeat OSS", "Apache-2.0"]],
+    runs: "wazuh VM, :9200",
+    inputs: "Filebeat shipping alerts.json and archives.json",
+    outputs: "wazuh-alerts-* for detections, wazuh-archives-* for every raw event the agents query. Zeek id.* fields are renamed to Suricata's src_ip/dest_ip/src_port/dest_port so both sensors share one schema and join on community_id",
+    repo: "lab/wazuh/manager/configure-manager.sh" },
+  dashboard: { name: "Wazuh dashboard", status: "live", phase: "Phase 1, verified",
+    role: "The human view: alert triage, Discover-style search, agent health.",
+    tools: [["Wazuh dashboard (OpenSearch Dashboards + Wazuh plugin)", "Apache-2.0 / GPL-2.0"]],
+    runs: "wazuh VM, https://10.10.10.10",
+    inputs: "Queries against the indexer",
+    outputs: "Your eyes",
+    repo: "n/a" },
+  poller: { name: "Alert poller", status: "planned", phase: "Phase 3",
+    role: "Front door of the agentic plane. Pulls only alerts worth money, and groups duplicates.",
+    tools: [["Python + opensearch-py", "Apache-2.0"]],
+    runs: "WSL2",
+    inputs: "New wazuh-alerts-* documents with rule.level ≥ 7 since the last checkpoint",
+    outputs: "Alert bundles (same host, rule and time window) for triage",
+    repo: "agent/ (planned)" },
+  triage: { name: "Triage agent", status: "planned", phase: "Phase 3",
+    role: "Fast first pass: map to ATT&CK, decide benign, suspicious or escalate, and explain why in two lines.",
+    tools: [["Small, cheap model via OpenRouter", "paid API"]],
+    runs: "WSL2",
+    inputs: "Alert bundle plus a little host context",
+    outputs: "Verdict, ATT&CK technique and confidence; escalations go to investigation",
+    repo: "agent/ (planned)" },
+  invest: { name: "Investigation agent", status: "planned", phase: "Phase 3",
+    role: "The analyst. Runs a tool-use loop until it can explain what happened, or gives up and says what it couldn't find.",
+    tools: [["Stronger model via OpenRouter", "paid API"], ["SOC tools over MCP", "this repo"]],
+    runs: "WSL2",
+    inputs: "Escalated alert bundles",
+    outputs: "Narrative, timeline, IOCs, a proposed response, and a DFIR-IRIS case",
+    repo: "agent/ (planned)" },
+  tools: { name: "SOC tools (MCP server)", status: "planned", phase: "Phase 3",
+    role: "One set of tools for both the autonomous agent and you in Claude Code. Read-only by design; the single write tool proposes rather than acts.",
+    tools: [["Model Context Protocol server (Python)", "this repo"]],
+    runs: "WSL2",
+    inputs: "Tool calls such as search_alerts, search_archives, process_tree, zeek_by_community_id, intel_lookup",
+    outputs: "Compact JSON results sized for an LLM context window",
+    repo: "agent/mcp/ (planned)" },
+  openrouter: { name: "OpenRouter", status: "planned", phase: "Phase 3",
+    role: "One OpenAI-compatible API key that reaches many models, so each task can use the cheapest model that does it well.",
+    tools: [["OpenRouter", "commercial API, not OSS"]],
+    runs: "Cloud",
+    inputs: "Prompts and tool schemas from both agents",
+    outputs: "Completions; token usage is logged per alert for cost tracking",
+    repo: ".env (TRIAGE_MODEL, INVESTIGATE_MODEL)" },
+  iris: { name: "DFIR-IRIS", status: "planned", phase: "Phase 3",
+    role: "Case management: where an investigation becomes a record with timeline, assets, IOCs and notes.",
+    tools: [["DFIR-IRIS", "LGPL-3.0"]],
+    runs: "WSL2, Docker Compose",
+    inputs: "Cases and evidence from the investigation agent via the IRIS API",
+    outputs: "A reviewable case and a proposed action for approval",
+    repo: "agent/iris/ (planned)" },
+  approval: { name: "Human approval", status: "planned", phase: "Phase 3",
+    role: "You. Nothing touches the lab hosts without an explicit yes.",
+    tools: [["CLI prompt or IRIS task", "this repo"]],
+    runs: "Your terminal",
+    inputs: "Proposed action with evidence",
+    outputs: "Approved call to the Wazuh API to trigger active response",
+    repo: "agent/ (planned)" },
+  claude: { name: "Claude Code", status: "planned", phase: "Phase 3",
+    role: "Interactive threat hunting. Connects to the same MCP tools so you can ask questions in plain language.",
+    tools: [["Claude Code", "Anthropic, not OSS"]],
+    runs: "WSL2, this repo",
+    inputs: "Your questions",
+    outputs: "Answers backed by the same queries the agents run",
+    repo: ".mcp.json (planned)" },
+  eval: { name: "Eval harness", status: "planned", phase: "Phase 4",
+    role: "Closes the loop. Runs known attacks and checks what the SOC detected and what the agents decided.",
+    tools: [["Python + Invoke-AtomicRedTeam over WinRM/SSH", "this repo / MIT"]],
+    runs: "WSL2",
+    inputs: "Test plan: technique → expected rule or verdict",
+    outputs: "Scorecard: detection rate, verdict accuracy, time to verdict, cost per alert",
+    repo: "eval/ (planned)" },
+};
+const STATUS_LABEL = { live: "live", building: "building", planned: "planned" };
+
+const svg = document.getElementById("dia");
+const detail = document.getElementById("detail");
+const nodes = [...svg.querySelectorAll(".node")];
+const edges = [...svg.querySelectorAll(".edge")];
+const flowBtns = [...document.querySelectorAll(".flows button")];
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+
+function neighbours(id) {
+  const ins = [], outs = [];
+  edges.forEach(e => {
+    const from = e.dataset.from.split(" "), to = e.dataset.to.split(" ");
+    const label = e.querySelector("text")?.textContent || "";
+    if (to.includes(id)) from.forEach(f => ins.push([f, label]));
+    if (from.includes(id)) to.forEach(t => outs.push([t, label]));
+  });
+  return { ins, outs };
+}
+
+function select(id) {
+  const n = NODES[id]; if (!n) return;
+  nodes.forEach(g => g.classList.toggle("sel", g.dataset.id === id));
+  const { ins, outs } = neighbours(id);
+  const link = ([nid, label]) => `<li><a href="#" data-goto="${nid}">${esc(NODES[nid].name)}</a>${label ? ` <span class="lic">${esc(label)}</span>` : ""}</li>`;
+  detail.innerHTML = `
+    <h3>${esc(n.name)}</h3>
+    <div class="role">${esc(n.role)}</div>
+    <span class="pill ${n.status}">${STATUS_LABEL[n.status]} · ${esc(n.phase)}</span>
+    <dl class="kv">
+      <dt>Built from</dt><dd><ul>${n.tools.map(([t, l]) => `<li>${esc(t)} <span class="lic">${esc(l)}</span></li>`).join("")}</ul></dd>
+      <dt>Runs on</dt><dd>${esc(n.runs)}</dd>
+      <dt>Takes in</dt><dd>${esc(n.inputs)}</dd>
+      <dt>Produces</dt><dd>${esc(n.outputs)}</dd>
+      ${ins.length ? `<dt>Upstream</dt><dd><ul>${ins.map(link).join("")}</ul></dd>` : ""}
+      ${outs.length ? `<dt>Downstream</dt><dd><ul>${outs.map(link).join("")}</ul></dd>` : ""}
+      <dt>In the repo</dt><dd><code>${esc(n.repo)}</code></dd>
+    </dl>`;
+}
+
+function trace(flow) {
+  const on = flow && !flowBtns.find(b => b.dataset.flow === flow && b.getAttribute("aria-pressed") === "true");
+  flowBtns.forEach(b => b.setAttribute("aria-pressed", String(on && b.dataset.flow === flow)));
+  svg.classList.toggle("tracing", !!on);
+  const lit = new Set();
+  edges.forEach(e => {
+    const hit = on && e.dataset.flows.split(" ").includes(flow);
+    e.classList.toggle("hl", hit);
+    if (hit) [...e.dataset.from.split(" "), ...e.dataset.to.split(" ")].forEach(x => lit.add(x));
+  });
+  nodes.forEach(g => g.classList.toggle("hl", lit.has(g.dataset.id)));
+}
+
+nodes.forEach(g => {
+  g.addEventListener("click", () => select(g.dataset.id));
+  g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(g.dataset.id); } });
+});
+flowBtns.forEach(b => b.addEventListener("click", () => trace(b.dataset.flow)));
+detail.addEventListener("click", e => {
+  const a = e.target.closest("a[data-goto]"); if (!a) return;
+  e.preventDefault(); select(a.dataset.goto);
+  svg.querySelector(`.node[data-id="${a.dataset.goto}"]`)?.focus({ preventScroll: true });
+});
+
+select("manager");
+</script>
+</body>
+</html>

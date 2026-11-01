@@ -116,6 +116,12 @@ write_files:
       @load policy/tuning/json-logs.zeek
       @load policy/protocols/conn/community-id-logging
       @load policy/frameworks/notice/community-id
+      # Wazuh's index template maps data.id as a keyword, so Zeek's dotted id.* fields
+      # would be rejected. Rename them to Suricata's names: one schema for both sensors.
+      redef Log::default_field_name_map = {
+        ["id.orig_h"] = "src_ip", ["id.orig_p"] = "src_port",
+        ["id.resp_h"] = "dest_ip", ["id.resp_p"] = "dest_port",
+      };
       ZEEK
 
       # Suricata: sniff mon, enable community-id in eve.json, fetch ET Open rules
