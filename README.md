@@ -45,10 +45,10 @@ Hyper-V internal switch "LabNet" 10.10.10.0/24              Windows host / WSL2
 
 | VM | vCPU | RAM | Disk |
 |---|---|---|---|
-| sensor-gw | 2 | 3 GB | 30 GB |
-| wazuh | 4 | 8 GB | 60 GB |
-| win-victim | 2 | 4 GB | 64 GB |
-| lin-victim | 1 | 1.5 GB | 20 GB |
+| sensor-gw | 2 | 2 GB | 30 GB |
+| wazuh | 4 | 6 GB | 60 GB |
+| win-victim | 2 | 2–4 GB (dynamic) | 64 GB |
+| lin-victim | 1 | 1–1.5 GB (dynamic) | 20 GB |
 | WSL2 (capped) | 8 | 8 GB | |
 
 All sizing and addressing lives in [`lab/config.env`](lab/config.env).

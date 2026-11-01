@@ -76,7 +76,7 @@ function New-LabDisk([string]$Name, [int]$SizeGB, [string]$FromBase) {
 }
 
 function New-LabVM {
-  param([string]$Name, [int]$Cpu, [int]$MemMB, [string]$Vhd, [object[]]$Nics, [switch]$Linux)
+  param([string]$Name, [int]$Cpu, [int]$MemMB, [int]$MaxMemMB = 0, [string]$Vhd, [object[]]$Nics, [switch]$Linux)
   New-VM -Name $Name -Generation 2 -MemoryStartupBytes ([int64]$MemMB * 1MB) -VHDPath $Vhd `
          -Path (Join-Path $LabDir "vms") | Out-Null
   Get-VMNetworkAdapter -VMName $Name | Remove-VMNetworkAdapter
@@ -85,7 +85,13 @@ function New-LabVM {
     if ($n.Mirror) { Set-VMNetworkAdapter -VMName $Name -Name $n.Name -PortMirroring $n.Mirror }
   }
   Set-VMProcessor -VMName $Name -Count $Cpu
-  Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false
+  if ($MaxMemMB -gt $MemMB) {
+    # Dynamic: reserve only startup RAM, balloon up to max under load
+    Set-VMMemory -VMName $Name -DynamicMemoryEnabled $true -MinimumBytes ([int64]$MemMB * 1MB) `
+                 -StartupBytes ([int64]$MemMB * 1MB) -MaximumBytes ([int64]$MaxMemMB * 1MB)
+  } else {
+    Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false
+  }
   Set-VM -Name $Name -AutomaticCheckpointsEnabled $false -AutomaticStartAction Nothing -AutomaticStopAction ShutDown
   if ($Linux) {
     Set-VMFirmware -VMName $Name -EnableSecureBoot On -SecureBootTemplate MicrosoftUEFICertificateAuthority
@@ -93,12 +99,12 @@ function New-LabVM {
 }
 
 function New-LabLinuxVM {
-  param([string]$Name, [int]$Cpu, [int]$MemMB, [int]$DiskGB, [object[]]$Nics)
+  param([string]$Name, [int]$Cpu, [int]$MemMB, [int]$MaxMemMB = 0, [int]$DiskGB, [object[]]$Nics)
   if (Get-VM -Name $Name -ErrorAction SilentlyContinue) { Write-Host "    $Name exists - skipping"; return $false }
   $seed = Join-Path $LabDir "seeds\$Name-seed.iso"
   if (-not (Test-Path $seed)) { throw "missing $seed - run build-images.sh in WSL" }
   $vhd = New-LabDisk $Name $DiskGB (Join-Path $LabDir "base\ubuntu-base.vhdx")
-  New-LabVM -Name $Name -Cpu $Cpu -MemMB $MemMB -Vhd $vhd -Nics $Nics -Linux
+  New-LabVM -Name $Name -Cpu $Cpu -MemMB $MemMB -MaxMemMB $MaxMemMB -Vhd $vhd -Nics $Nics -Linux
   Add-VMDvdDrive -VMName $Name -Path $seed
   Set-VMFirmware -VMName $Name -FirstBootDevice (Get-VMHardDiskDrive -VMName $Name)
   return $true
@@ -134,7 +140,7 @@ New-LabLinuxVM -Name wazuh -Cpu $C.LAB_WAZUH_CPU -MemMB $C.LAB_WAZUH_MEM_MB -Dis
 if ((Get-VM wazuh).State -ne 'Running') { Start-VM wazuh }
 
 Step "lin-victim"
-New-LabLinuxVM -Name lin-victim -Cpu $C.LAB_LIN_CPU -MemMB $C.LAB_LIN_MEM_MB -DiskGB $C.LAB_LIN_DISK_GB -Nics @(
+New-LabLinuxVM -Name lin-victim -Cpu $C.LAB_LIN_CPU -MemMB $C.LAB_LIN_MEM_MB -MaxMemMB ([int]$C.LAB_LIN_MEM_MAX_MB) -DiskGB $C.LAB_LIN_DISK_GB -Nics @(
   @{ Name = "lan"; Switch = $lab; Mac = $C.LAB_LIN_MAC; Mirror = "Source" }
 ) | Out-Null
 if ((Get-VM lin-victim).State -ne 'Running') { Start-VM lin-victim }
@@ -148,7 +154,7 @@ if (-not $SkipWindows) {
     Write-Warning "No -WindowsIso given (or not found). Re-run later with -WindowsIso <path> to create win-victim."
   } else {
     $vhd = New-LabDisk win-victim $C.LAB_WIN_DISK_GB $null
-    New-LabVM -Name win-victim -Cpu $C.LAB_WIN_CPU -MemMB $C.LAB_WIN_MEM_MB -Vhd $vhd -Nics @(
+    New-LabVM -Name win-victim -Cpu $C.LAB_WIN_CPU -MemMB $C.LAB_WIN_MEM_MB -MaxMemMB ([int]$C.LAB_WIN_MEM_MAX_MB) -Vhd $vhd -Nics @(
       @{ Name = "lan"; Switch = $lab; Mac = $C.LAB_WIN_MAC; Mirror = "Source" }
     )
     Set-VMKeyProtector -VMName win-victim -NewLocalKeyProtector
