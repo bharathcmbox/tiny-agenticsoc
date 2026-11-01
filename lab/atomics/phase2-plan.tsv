@@ -1,0 +1,18 @@
+# id	host	technique	test	manual_command (optional; used instead of Invoke-AtomicTest)
+W01	win	T1059.001	17
+W02	win	T1059.001	18
+W03	win	T1003.001	2
+W04	win	T1547.001	1
+W05	win	T1053.005	2
+W06	win	T1218.011	2
+W07	win	T1105	7
+W08	win	T1071.004	2
+W09	win	T1087.001	8
+W10	win	T1136.001	4
+L01	lin	T1136.001	1
+L02	lin	T1053.003	3
+L03	lin	T1070.003	1
+L04	lin	T1087.001	3
+L05	lin	T1548.001	3
+L06	lin	T1059.004	1
+W11	win	T1070.001	0	wevtutil cl Security

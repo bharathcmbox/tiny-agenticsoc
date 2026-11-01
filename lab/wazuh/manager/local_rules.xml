@@ -22,3 +22,89 @@
     <group>zeek_weird,</group>
   </rule>
 </group>
+
+<!-- ===== Tuning: known-benign noise (ids 1002xx) ===== -->
+<group name="tuning,windows,">
+  <!-- Every PowerShell start writes and deletes __PSScriptPolicyTest_xxxxxxxx.xxx.ps1 in %TEMP%
+       to probe AppLocker/execution policy. Sysmon rule 92213 ("executable dropped in malware
+       folder", level 15) fires on it every time. Keep the event in archives, drop the alert. -->
+  <rule id="100200" level="0">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\__PSScriptPolicyTest_[a-z0-9]{8}\.[a-z0-9]{3}\.ps1$</field>
+    <description>Benign: PowerShell execution-policy probe file in TEMP (tuned from 92213)</description>
+  </rule>
+</group>
+
+<!-- ===== Linux detections from auditd keys (Neo23x0 ruleset) (ids 1003xx) ===== -->
+<group name="audit,linux_detection,">
+  <!-- Wazuh's stock audit rules only alert on keys listed in its audit-keys CDB; the Neo23x0
+       keys below produce telemetry but no alert without these. Coverage gaps found in Phase 2. -->
+  <rule id="100300" level="10">
+    <if_group>audit</if_group>
+    <field name="audit.key">^cron$</field>
+    <description>auditd: cron configuration changed by $(audit.exe) ($(audit.file.name))</description>
+    <mitre><id>T1053.003</id></mitre>
+  </rule>
+
+  <rule id="100301" level="12">
+    <if_group>audit</if_group>
+    <field name="audit.key">^perm_mod$</field>
+    <!-- fchmodat(268) carries the mode in a2, chmod(90)/fchmod(91) in a1 (hex). A leading hex
+         digit 4-f in a 3-digit mode means the setgid (0x400) or setuid (0x800) bit is being set. -->
+    <regex type="pcre2">(syscall=268 .*?a2=|syscall=(90|91) .*?a1=)[4-9a-f][0-9a-f]{2} </regex>
+    <description>auditd: setuid/setgid bit set by $(audit.exe) (auid=$(audit.auid))</description>
+    <mitre><id>T1548.001</id></mitre>
+  </rule>
+</group>
+
+<!-- ===== Windows credential access + persistence gaps found in Phase 2 (ids 1004xx) ===== -->
+<group name="windows,sysmon,credential_access,">
+  <!-- T1003.001-2 ran to completion with no alert: stock 4.14 rules have nothing for comsvcs MiniDump. -->
+  <rule id="100400" level="14">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)comsvcs(\.dll)?["',\s]+(#\s*)?(MiniDump|24)\b</field>
+    <description>LSASS dump via comsvcs.dll MiniDump: $(win.eventdata.commandLine)</description>
+    <mitre><id>T1003.001</id></mitre>
+  </rule>
+
+  <!-- Full or VM_READ-style access to lsass.exe from something that is not a known system reader.
+       sysmon-modular already filters most benign Event 10 noise at the source. -->
+  <rule id="100401" level="13">
+    <if_group>sysmon_event_10</if_group>
+    <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
+    <field name="win.eventdata.grantedAccess" type="pcre2">(?i)^0x(1fffff|1f0fff|1f1fff|1f2fff|1f3fff|1010|1410|1418|1438|143a)$</field>
+    <field name="win.eventdata.sourceImage" type="pcre2" negate="yes">(?i)\\(MsMpEng|wininit|csrss|services|svchost|lsm|wmiprvse|taskmgr)\.exe$</field>
+    <description>Process $(win.eventdata.sourceImage) opened lsass.exe with access $(win.eventdata.grantedAccess)</description>
+    <mitre><id>T1003.001</id></mitre>
+  </rule>
+
+  <rule id="100402" level="12">
+    <if_group>sysmon_event_11</if_group>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)lsass[^\\]*\.(dmp|zip)$</field>
+    <description>LSASS dump file written: $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
+    <mitre><id>T1003.001</id></mitre>
+  </rule>
+</group>
+
+<group name="windows,sysmon,persistence,">
+  <!-- T1053.005-2 only produced level-4 alerts. Task creation is sometimes legitimate, so this sits
+       just above the agent threshold: the triage agent decides, not a human at 3 a.m. -->
+  <rule id="100403" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\schtasks\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)[/-]create\b</field>
+    <description>Scheduled task created: $(win.eventdata.commandLine)</description>
+    <mitre><id>T1053.005</id></mitre>
+  </rule>
+</group>
+
+<group name="windows,defense_evasion,">
+  <!-- Stock 63103 "The audit log was cleared" is level 5: below the agent threshold. Clearing the
+       Security log is a classic anti-forensics step (T1070.001), so raise it. -->
+  <rule id="100404" level="12">
+    <if_sid>63103</if_sid>
+    <description>Security audit log cleared by $(win.eventdata.subjectUserName)</description>
+    <mitre><id>T1070.001</id></mitre>
+  </rule>
+</group>
