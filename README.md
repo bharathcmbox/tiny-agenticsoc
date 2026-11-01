@@ -35,7 +35,7 @@ Hyper-V internal switch "LabNet" 10.10.10.0/24              Windows host / WSL2
 
 ## Phases
 
-- [ ] **0. Infra:** switch, VMs, gateway, sensors → [docs/phase0-infra.md](docs/phase0-infra.md)
+- [x] **0. Infra:** switch, VMs, gateway, sensors → [docs/phase0-infra.md](docs/phase0-infra.md)
 - [ ] **1. Telemetry:** Wazuh install, agents, Sysmon, Zeek/Suricata log shipping
 - [ ] **2. Attack sim:** about 10 curated atomics, with a detection-coverage matrix
 - [ ] **3. Agent:** ingest → triage → investigate → IRIS case → human-approved response

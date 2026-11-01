@@ -81,6 +81,9 @@ Checklist:
 | Gateway wait times out | `vmconnect localhost sensor-gw`, log in as `soc` with the console password, read `/var/log/cloud-init-output.log`. Usually the Default Switch has no internet (VPN on the host?) |
 | Zeek/Suricata not running | `/var/log/tiny-soc-setup.log` on sensor-gw. Re-run `sudo /usr/local/sbin/setup-sensors.sh` |
 | Sensors see no victim traffic | `Get-VMNetworkAdapter -VMName lin-victim,sensor-gw \| ft VMName,Name,PortMirroringMode` should show Source on victims and Destination on `mon` |
+| `Unable to allocate N MB of RAM (0x800705AA)` | The host is short on free RAM. Check with `Get-VMMemory -VMName *`; victims should be dynamic. Apply new sizes with `Set-VMMemory` while the VM is **off**, then check the result. Closing Chrome tabs helps |
+| "Press any key to boot from CD" ignores keys | Click inside the VM screen first. Or start the VM and send Enter through WMI: `$kb = Get-CimAssociatedInstance -InputObject (Get-CimInstance -Namespace root\virtualization\v2 -ClassName Msvm_ComputerSystem -Filter "ElementName='win-victim'") -ResultClassName Msvm_Keyboard; 1..30 \| % { Invoke-CimMethod -InputObject $kb -MethodName TypeKey -Arguments @{keyCode=0x0D}; sleep -m 500 }` |
+| Windows Setup defaults to Core | In the edition list, pick **Standard Evaluation (Desktop Experience)** |
 | WSL can't reach 10.10.10.x | Confirm `.wslconfig` has `networkingMode=mirrored` and that you ran `wsl --shutdown` |
 
 Rebuild from scratch: `.\destroy-lab.ps1` (VMs only) or `.\destroy-lab.ps1 -All` (also the switch, host IP and firewall rule).
