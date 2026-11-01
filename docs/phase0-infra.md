@@ -54,8 +54,12 @@ ssh -i $K soc@10.10.10.1 'sudo nft list ruleset | head -20; systemctl is-active 
 ssh -i $K soc@10.10.10.21 'curl -sI https://example.com | head -1; ping -c1 -W2 192.168.1.1 || echo "blocked (good)"'
 
 # sensors see victim traffic (generate some, then look)
-ssh -i $K soc@10.10.10.21 'curl -s http://testmynids.org/uid/index.html'     # triggers ET rule 2100498
-ssh -i $K soc@10.10.10.1  'sudo tail -n 5 /var/log/suricata/fast.log; sudo tail -n 2 /opt/zeek/logs/current/dns.log'
+# (testmynids.org has lapsed; send the 'uid=0(root)' string ourselves - rule 2100498 matches it in any direction)
+ssh -i $K soc@10.10.10.21 'curl -s -o /dev/null -d "uid=0(root) gid=0(root)" http://example.com/'
+ssh -i $K soc@10.10.10.1  'sudo tail -n 3 /var/log/suricata/fast.log
+  sudo grep "\"event_type\":\"alert\"" /var/log/suricata/eve.json | tail -1 | jq -c "{sig:.alert.signature, community_id}"
+  sudo tail -n 1 /opt/zeek/logs/current/conn.log | jq -c "{orig:.\"id.orig_h\", resp:.\"id.resp_h\", community_id}"'
+# the Suricata alert and the Zeek conn record should share the same community_id
 ```
 
 Checklist:
