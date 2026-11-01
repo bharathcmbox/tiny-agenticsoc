@@ -193,7 +193,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <g class="edge" data-id="e-ar" data-flows="response" data-from="approval" data-to="manager"><path d="M110,683 H60 V462 H620 V290"/><text x="340" y="456" text-anchor="middle">approved active response · Wazuh API :55000</text></g>
 
   <!-- nodes -->
-  <g class="node st-planned" data-id="art" tabindex="0" role="button" aria-label="Atomic Red Team"><rect x="30" y="150" width="130" height="66" rx="6"/><circle class="dot" cx="148" cy="162" r="4"/><text class="t" x="95" y="178" text-anchor="middle">Atomic Red Team</text><text class="s" x="95" y="196" text-anchor="middle">adversary emulation</text></g>
+  <g class="node st-live" data-id="art" tabindex="0" role="button" aria-label="Atomic Red Team"><rect x="30" y="150" width="130" height="66" rx="6"/><circle class="dot" cx="148" cy="162" r="4"/><text class="t" x="95" y="178" text-anchor="middle">Atomic Red Team</text><text class="s" x="95" y="196" text-anchor="middle">adversary emulation</text></g>
   <g class="node st-live" data-id="win" tabindex="0" role="button" aria-label="win-victim"><rect x="236" y="96" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="108" r="4"/><text class="t" x="320" y="124" text-anchor="middle">win-victim</text><text class="s" x="320" y="142" text-anchor="middle">Sysmon · Wazuh agent</text></g>
   <g class="node st-live" data-id="lin" tabindex="0" role="button" aria-label="lin-victim"><rect x="236" y="220" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="232" r="4"/><text class="t" x="320" y="248" text-anchor="middle">lin-victim</text><text class="s" x="320" y="266" text-anchor="middle">auditd · Wazuh agent</text></g>
   <g class="node st-live" data-id="sensor" tabindex="0" role="button" aria-label="sensor-gw"><rect x="220" y="344" width="200" height="76" rx="6"/><circle class="dot" cx="408" cy="356" r="4"/><text class="t" x="320" y="368" text-anchor="middle">sensor-gw</text><text class="s" x="320" y="386" text-anchor="middle">Zeek · Suricata</text><text class="s" x="320" y="402" text-anchor="middle">NAT gw · DNS/DHCP</text></g>
@@ -243,7 +243,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
     <table>
       <thead><tr><th>Job</th><th>What happens</th><th>Component</th><th>License</th><th>Runs on</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td>Simulate</td><td>Run real ATT&amp;CK techniques on purpose</td><td>Atomic Red Team + Invoke-AtomicRedTeam</td><td class="num">MIT</td><td>inside victims</td><td><span class="pill planned">phase 2</span></td></tr>
+        <tr><td>Simulate</td><td>Run real ATT&amp;CK techniques on purpose</td><td>Atomic Red Team + Invoke-AtomicRedTeam</td><td class="num">MIT</td><td>inside victims</td><td><span class="pill live">live</span></td></tr>
         <tr><td rowspan="3">Generate</td><td>Process, registry, network, PowerShell events on Windows</td><td>Sysmon (sysmon-modular config)</td><td class="num">free, closed source</td><td>win-victim</td><td><span class="pill live">live</span></td></tr>
         <tr><td>Syscalls, execs, file and user changes on Linux</td><td>auditd (Neo23x0 ruleset)</td><td class="num">GPL-2.0</td><td>lin-victim</td><td><span class="pill live">live</span></td></tr>
         <tr><td>Connection logs, protocol metadata, signature alerts</td><td>Zeek, Suricata (ET Open rules)</td><td class="num">BSD-3 / GPL-2.0</td><td>sensor-gw</td><td><span class="pill live">live</span></td></tr>
@@ -307,8 +307,8 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <div class="card">
     <div class="phase"><div class="n">Phase 0</div><div><span class="pill live">done</span> Hyper-V switch and VMs, NAT and containment, Zeek and Suricata with community-id, verified with a test alert.</div></div>
     <div class="phase"><div class="n">Phase 1</div><div><span class="pill live">done</span> Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules.</div></div>
-    <div class="phase"><div class="n">Phase 2</div><div><span class="pill planned">next</span> About ten curated atomics and a detection-coverage matrix of what fired and what did not.</div></div>
-    <div class="phase"><div class="n">Phase 3</div><div><span class="pill planned">planned</span> Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response.</div></div>
+    <div class="phase"><div class="n">Phase 2</div><div><span class="pill live">done</span> 17 atomics with Defender on, a coverage matrix that subtracts harness noise, and new rules for LSASS dumping, cron, setuid, schtasks and log clearing: 7 of 17 detected became 12 of 17.</div></div>
+    <div class="phase"><div class="n">Phase 3</div><div><span class="pill planned">next</span> Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response.</div></div>
     <div class="phase"><div class="n">Phase 4</div><div><span class="pill planned">planned</span> Eval harness: scheduled atomics produce a scorecard of detection, verdict accuracy, latency and cost per alert.</div></div>
   </div>
 </section>
@@ -318,13 +318,13 @@ footer { color: var(--muted); font-size: 0.85rem; }
 
 <script>
 const NODES = {
-  art: { name: "Atomic Red Team", status: "planned", phase: "Phase 2",
+  art: { name: "Atomic Red Team", status: "live", phase: "Phase 2, verified",
     role: "The attacker. A library of small, documented tests for MITRE ATT&CK techniques, each with a cleanup step.",
     tools: [["Atomic Red Team", "MIT"], ["Invoke-AtomicRedTeam", "MIT"]],
     runs: "Inside win-victim and lin-victim only, never on the host or in WSL.",
     inputs: "Technique IDs chosen by you or the eval harness",
     outputs: "Real process, file, registry and network activity for the sensors to catch",
-    repo: "lab/atomics/ (planned)" },
+    repo: "lab/atomics/ (plan, runner, coverage matrix)" },
   win: { name: "win-victim", status: "live", phase: "Phase 1, verified",
     role: "Windows endpoint target. Its telemetry is the richest in the lab.",
     tools: [["Windows Server 2022 eval", "180-day evaluation"], ["Sysmon", "free, closed source"], ["sysmon-modular config", "MIT"], ["Wazuh agent", "GPL-2.0"]],

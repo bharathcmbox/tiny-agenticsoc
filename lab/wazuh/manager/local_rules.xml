@@ -104,7 +104,7 @@
        Security log is a classic anti-forensics step (T1070.001), so raise it. -->
   <rule id="100404" level="12">
     <if_sid>63103</if_sid>
-    <description>Security audit log cleared by $(win.eventdata.subjectUserName)</description>
+    <description>Windows Security audit log was cleared (anti-forensics)</description>
     <mitre><id>T1070.001</id></mitre>
   </rule>
 </group>

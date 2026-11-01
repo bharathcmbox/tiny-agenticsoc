@@ -68,7 +68,7 @@ and can only act on the lab after a human approves.
 
 | Job | What happens | Component | License | Runs on | Status |
 |---|---|---|---|---|---|
-| Simulate | Run real ATT&CK techniques on purpose | Atomic Red Team + Invoke-AtomicRedTeam | MIT | inside victims | Phase 2 |
+| Simulate | Run real ATT&CK techniques on purpose | Atomic Red Team + Invoke-AtomicRedTeam | MIT | inside victims | ✅ live |
 | Generate | Process, registry, network, PowerShell events on Windows | Sysmon (sysmon-modular config) | free, closed source | win-victim | ✅ live |
 | Generate | Syscalls, execs, file and user changes on Linux | auditd (Neo23x0 ruleset) | GPL-2.0 | lin-victim | ✅ live |
 | Generate | Connection logs, protocol metadata, signature alerts | Zeek, Suricata (ET Open) | BSD-3 / GPL-2.0 | sensor-gw | ✅ live |
@@ -141,8 +141,8 @@ configured by cloud-init, so the whole lab can be rebuilt from the repo.
 |---|---|---|
 | 0 | ✅ done | Hyper-V switch and VMs, NAT and containment, Zeek and Suricata with community-id, verified with a test alert |
 | 1 | ✅ done | Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules |
-| 2 | next | About ten curated atomics and a detection-coverage matrix of what fired and what did not |
-| 3 | planned | Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response |
+| 2 | ✅ done | 17 atomics with Defender on, coverage matrix with harness-noise subtraction, new rules for LSASS dumping, cron, setuid, schtasks and log clearing: 7 → 12 of 17 detected |
+| 3 | next | Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response |
 | 4 | planned | Eval harness: scheduled atomics produce a scorecard of detection, verdict accuracy, latency and cost per alert |
 
 ---
