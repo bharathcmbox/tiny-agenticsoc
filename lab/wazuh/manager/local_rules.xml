@@ -27,9 +27,9 @@
 <group name="tuning,windows,">
   <!-- Every PowerShell start writes and deletes __PSScriptPolicyTest_xxxxxxxx.xxx.ps1 in %TEMP%
        to probe AppLocker/execution policy. Sysmon rule 92213 ("executable dropped in malware
-       folder", level 15) fires on it every time. Keep the event in archives, drop the alert. -->
+       folder", level 15) and 92201 fire on it every time. Keep the event in archives, drop the alert. -->
   <rule id="100200" level="0">
-    <if_sid>92213</if_sid>
+    <if_sid>92213, 92201</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\__PSScriptPolicyTest_[a-z0-9]{8}\.[a-z0-9]{3}\.ps1$</field>
     <description>Benign: PowerShell execution-policy probe file in TEMP (tuned from 92213)</description>

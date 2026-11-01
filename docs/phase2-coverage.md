@@ -67,8 +67,9 @@ New rules:
   and a compiled `chmod()` call all match. Validated with `wazuh-logtest`: `a2=9ed` alerts at
   level 12, `a2=1a4` does not.
 
-Caveat on L02: the retest alert fired on the **cleanup** (`rm /etc/cron.d/persistevil`), not the
-creation. The creation write was not audited, and that still needs a look.
+On L02, rule 100300 fired twice: once when `/usr/bin/dash` created `/etc/cron.d/persistevil` and
+once for the cleanup `rm`. (The first matrix only showed the `rm` because of how its window was cut;
+the Phase 3 poller showed both.)
 
 ## Finding 3: the test harness is noisy, and looks malicious
 
@@ -105,7 +106,6 @@ the entire T1070.001 test definition). Its detections reach Wazuh as rules 62123
   check the timing) rather than a static rule.
 - **L03 bash history cleared**: the atomic runs as root via sudo, and no audit record ties the
   deletion to `.bash_history`. Needs a watch rule on history files.
-- **L02**: audit the creation of cron files, not just their deletion.
 - Re-run the full plan in Phase 4 under the eval harness so before/after is measured on all 17.
 
 ## Reproduce
