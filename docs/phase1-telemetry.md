@@ -50,7 +50,16 @@ done
 
 ## 4. Windows agent + Sysmon
 
-See `lab/wazuh/windows/` (step 3 of Phase 1).
+Inside win-victim (RDP), as Administrator. Copy the script over the RDP clipboard, for example with
+`cat lab/wazuh/windows/setup-win-victim.ps1 | clip.exe` in WSL and then paste it into Notepad in the VM:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\Tools\setup.ps1
+```
+
+It installs Sysmon (after checking the Microsoft signature) with the pinned sysmon-modular config
+(sha256-checked), enables PowerShell script block logging and process command-line auditing, and
+installs the Wazuh agent 4.14.9 (sha256-checked) in group `windows`.
 
 ## Notes and gotchas
 
@@ -62,6 +71,9 @@ See `lab/wazuh/windows/` (step 3 of Phase 1).
   `/var/log/filebeat/filebeat`). sensor-gw's `local.zeek` renames them to Suricata's names
   (`src_ip`, `src_port`, `dest_ip`, `dest_port`), so both sensors share one schema and join on
   `community_id`.
+- **The SIEM watches itself.** Wazuh's own SCA (CIS benchmark) checks run PowerShell from
+  `wazuh-agent.exe`, which trips Sysmon-based rules such as 92021 ("scripting file under Windows
+  Temp"). These are real alerts with a benign cause, and good early test cases for the triage agent.
 - Credentials are extracted with
   `sudo tar -xOf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt`. They are kept
   only in `lab/.secrets/`.
@@ -75,4 +87,4 @@ The certificate is self-signed, so accept the browser warning.
 - [x] Suricata test alert (see the phase0 doc) shows as rule 86601 in `wazuh-alerts-*`
 - [x] Zeek events appear in `wazuh-archives-*`, and the Suricata alert joins its Zeek `conn` record on `data.community_id`
 - [x] `sudo useradd testuser && sudo userdel testuser` on lin-victim produces user-management alerts, and auditd events land in archives
-- [ ] Windows: Sysmon event ID 1 (process create) from win-victim in archives
+- [x] Windows: Sysmon event ID 1 (process create) from win-victim in archives, plus Security, PowerShell and System channels

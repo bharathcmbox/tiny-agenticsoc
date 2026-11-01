@@ -15,6 +15,8 @@ so it costs nothing to host. The only spend is LLM tokens through OpenRouter.
 
 ## Architecture
 
+Full write-up with an interactive diagram: [docs/architecture.html](docs/architecture.html) · [docs/architecture.md](docs/architecture.md)
+
 ```
 Hyper-V internal switch "LabNet" 10.10.10.0/24              Windows host / WSL2
 ┌──────────────────────────────────────────────┐        ┌───────────────────────────────┐
@@ -36,7 +38,7 @@ Hyper-V internal switch "LabNet" 10.10.10.0/24              Windows host / WSL2
 ## Phases
 
 - [x] **0. Infra:** switch, VMs, gateway, sensors → [docs/phase0-infra.md](docs/phase0-infra.md)
-- [ ] **1. Telemetry:** Wazuh install, agents, Sysmon, Zeek/Suricata log shipping
+- [x] **1. Telemetry:** Wazuh install, agents, Sysmon, Zeek/Suricata log shipping → [docs/phase1-telemetry.md](docs/phase1-telemetry.md)
 - [ ] **2. Attack sim:** about 10 curated atomics, with a detection-coverage matrix
 - [ ] **3. Agent:** ingest → triage → investigate → IRIS case → human-approved response
 - [ ] **4. Eval:** atomic-driven scorecard (detection, verdict accuracy, cost/latency per alert)

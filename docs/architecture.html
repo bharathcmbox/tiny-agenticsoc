@@ -194,7 +194,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
 
   <!-- nodes -->
   <g class="node st-planned" data-id="art" tabindex="0" role="button" aria-label="Atomic Red Team"><rect x="30" y="150" width="130" height="66" rx="6"/><circle class="dot" cx="148" cy="162" r="4"/><text class="t" x="95" y="178" text-anchor="middle">Atomic Red Team</text><text class="s" x="95" y="196" text-anchor="middle">adversary emulation</text></g>
-  <g class="node st-building" data-id="win" tabindex="0" role="button" aria-label="win-victim"><rect x="236" y="96" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="108" r="4"/><text class="t" x="320" y="124" text-anchor="middle">win-victim</text><text class="s" x="320" y="142" text-anchor="middle">Sysmon · Wazuh agent</text></g>
+  <g class="node st-live" data-id="win" tabindex="0" role="button" aria-label="win-victim"><rect x="236" y="96" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="108" r="4"/><text class="t" x="320" y="124" text-anchor="middle">win-victim</text><text class="s" x="320" y="142" text-anchor="middle">Sysmon · Wazuh agent</text></g>
   <g class="node st-live" data-id="lin" tabindex="0" role="button" aria-label="lin-victim"><rect x="236" y="220" width="168" height="66" rx="6"/><circle class="dot" cx="392" cy="232" r="4"/><text class="t" x="320" y="248" text-anchor="middle">lin-victim</text><text class="s" x="320" y="266" text-anchor="middle">auditd · Wazuh agent</text></g>
   <g class="node st-live" data-id="sensor" tabindex="0" role="button" aria-label="sensor-gw"><rect x="220" y="344" width="200" height="76" rx="6"/><circle class="dot" cx="408" cy="356" r="4"/><text class="t" x="320" y="368" text-anchor="middle">sensor-gw</text><text class="s" x="320" y="386" text-anchor="middle">Zeek · Suricata</text><text class="s" x="320" y="402" text-anchor="middle">NAT gw · DNS/DHCP</text></g>
   <g class="node st-live" data-id="manager" tabindex="0" role="button" aria-label="Wazuh manager"><rect x="530" y="150" width="180" height="140" rx="6"/><circle class="dot" cx="698" cy="162" r="4"/><text class="t" x="620" y="182" text-anchor="middle">Wazuh manager</text><text class="s" x="620" y="210" text-anchor="middle">remoted :1514</text><text class="s" x="620" y="230" text-anchor="middle">decoders + rules</text><text class="s" x="620" y="250" text-anchor="middle">local_rules.xml</text><text class="s" x="620" y="270" text-anchor="middle">active response</text></g>
@@ -227,7 +227,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
     </div>
     <div class="legend" aria-label="Legend">
       <div><span class="sw live"></span>Live and verified</div>
-      <div><span class="sw build"></span>Being built now (Phase 1)</div>
+      <div><span class="sw build"></span>Being built now</div>
       <div><span class="sw plan"></span>Planned (Phases 2 to 4)</div>
       <div><span class="sw edge"></span>Data or control flow</div>
       <div><span class="sw edge dash"></span>Packet copy (Hyper-V port mirror)</div>
@@ -244,7 +244,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
       <thead><tr><th>Job</th><th>What happens</th><th>Component</th><th>License</th><th>Runs on</th><th>Status</th></tr></thead>
       <tbody>
         <tr><td>Simulate</td><td>Run real ATT&amp;CK techniques on purpose</td><td>Atomic Red Team + Invoke-AtomicRedTeam</td><td class="num">MIT</td><td>inside victims</td><td><span class="pill planned">phase 2</span></td></tr>
-        <tr><td rowspan="3">Generate</td><td>Process, registry, network, PowerShell events on Windows</td><td>Sysmon (sysmon-modular config)</td><td class="num">free, closed source</td><td>win-victim</td><td><span class="pill building">phase 1</span></td></tr>
+        <tr><td rowspan="3">Generate</td><td>Process, registry, network, PowerShell events on Windows</td><td>Sysmon (sysmon-modular config)</td><td class="num">free, closed source</td><td>win-victim</td><td><span class="pill live">live</span></td></tr>
         <tr><td>Syscalls, execs, file and user changes on Linux</td><td>auditd (Neo23x0 ruleset)</td><td class="num">GPL-2.0</td><td>lin-victim</td><td><span class="pill live">live</span></td></tr>
         <tr><td>Connection logs, protocol metadata, signature alerts</td><td>Zeek, Suricata (ET Open rules)</td><td class="num">BSD-3 / GPL-2.0</td><td>sensor-gw</td><td><span class="pill live">live</span></td></tr>
         <tr><td>Ingest</td><td>Collect, ship, decode, apply detection rules</td><td>Wazuh agent → Wazuh manager</td><td class="num">GPL-2.0</td><td>every host → wazuh VM</td><td><span class="pill live">live</span></td></tr>
@@ -306,7 +306,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <h2>Roadmap</h2>
   <div class="card">
     <div class="phase"><div class="n">Phase 0</div><div><span class="pill live">done</span> Hyper-V switch and VMs, NAT and containment, Zeek and Suricata with community-id, verified with a test alert.</div></div>
-    <div class="phase"><div class="n">Phase 1</div><div><span class="pill building">in progress</span> Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules.</div></div>
+    <div class="phase"><div class="n">Phase 1</div><div><span class="pill live">done</span> Wazuh all-in-one with archives on, agents grouped as sensor, linux and windows, Sysmon, auditd, local Zeek rules.</div></div>
     <div class="phase"><div class="n">Phase 2</div><div><span class="pill planned">next</span> About ten curated atomics and a detection-coverage matrix of what fired and what did not.</div></div>
     <div class="phase"><div class="n">Phase 3</div><div><span class="pill planned">planned</span> Poller, triage and investigation agents, MCP tool server, DFIR-IRIS cases, approval-gated active response.</div></div>
     <div class="phase"><div class="n">Phase 4</div><div><span class="pill planned">planned</span> Eval harness: scheduled atomics produce a scorecard of detection, verdict accuracy, latency and cost per alert.</div></div>
@@ -325,7 +325,7 @@ const NODES = {
     inputs: "Technique IDs chosen by you or the eval harness",
     outputs: "Real process, file, registry and network activity for the sensors to catch",
     repo: "lab/atomics/ (planned)" },
-  win: { name: "win-victim", status: "building", phase: "Phase 1",
+  win: { name: "win-victim", status: "live", phase: "Phase 1, verified",
     role: "Windows endpoint target. Its telemetry is the richest in the lab.",
     tools: [["Windows Server 2022 eval", "180-day evaluation"], ["Sysmon", "free, closed source"], ["sysmon-modular config", "MIT"], ["Wazuh agent", "GPL-2.0"]],
     runs: "Hyper-V VM, 10.10.10.20, 2 to 4 GB dynamic RAM, NIC mirrored to sensor-gw",
