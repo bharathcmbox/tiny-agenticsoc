@@ -95,6 +95,39 @@ def cmd_ledger(a, s: Settings):
               f"${cost:.4f} total · ${cost / len(rs):.5f}/bundle · {lat:.1f}s avg")
 
 
+def _ledger_rows() -> list[dict]:
+    if not LEDGER.exists():
+        sys.exit("no ledger yet: run triage first")
+    return [json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()]
+
+
+def cmd_incidents(a, s: Settings):
+    from . import incidents as I
+    incs = I.group(_ledger_rows(), I.load())
+    I.save(incs)
+    sev_icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "⚪"}
+    for i in sorted(incs, key=lambda x: (-I.SEVERITY_ORDER[x.severity], x.first)):
+        print(f"{sev_icon[i.severity]} {i.id} {i.severity:8s} {i.status:12s} {i.first[5:16]}→{i.last[11:16]} "
+              f"bundles={len(i.bundle_keys):2d} {','.join(i.techniques)[:40]:40s}\n      {i.title}")
+    print(f"{len(incs)} incidents from {sum(len(i.bundle_keys) for i in incs)} escalated bundles -> {I.INCIDENTS.relative_to(I.RESULTS.parents[1])}")
+
+
+def cmd_incident(a, s: Settings):
+    from . import incidents as I
+    inc = next((i for i in I.load() if i.id == a.id), None)
+    if not inc:
+        sys.exit(f"{a.id} not found (run: socagent incidents)")
+    print(json.dumps(I.asdict(inc), indent=1, ensure_ascii=False))
+
+
+def cmd_run(a, s: Settings):
+    """One SOC cycle: triage everything new since the checkpoint, then regroup incidents."""
+    a.since = a.until = None
+    a.force = False
+    cmd_triage(a, s)
+    cmd_incidents(a, s)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="socagent")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -102,9 +135,14 @@ def main():
     t = sub.add_parser("triage"); t.add_argument("--since"); t.add_argument("--until"); t.add_argument("--limit", type=int, default=10)
     t.add_argument("--force", action="store_true", help="re-triage bundles already in the ledger")
     sub.add_parser("ledger")
+    r = sub.add_parser("run", help="triage new alerts since the checkpoint, then group incidents")
+    r.add_argument("--limit", type=int, default=25)
+    sub.add_parser("incidents", help="group escalated verdicts into incidents and list them")
+    inc = sub.add_parser("incident", help="show one incident"); inc.add_argument("id")
     a = ap.parse_args()
     s = Settings.load()
-    {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger}[a.cmd](a, s)
+    {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
+     "incident": cmd_incident, "run": cmd_run}[a.cmd](a, s)
 
 
 if __name__ == "__main__":
