@@ -1,0 +1,18 @@
+version: 2
+ethernets:
+  wan:
+    match: {macaddress: "${LAB_GW_WAN_MAC}"}
+    set-name: wan
+    dhcp4: true
+  lan:
+    match: {macaddress: "${LAB_GW_LAN_MAC}"}
+    set-name: lan
+    addresses: [${LAB_GW_IP}/${LAB_PREFIX}]
+  mon:
+    # Hyper-V port-mirroring destination: no IP, sniff only
+    match: {macaddress: "${LAB_GW_MON_MAC}"}
+    set-name: mon
+    dhcp4: false
+    dhcp6: false
+    link-local: []
+    optional: true

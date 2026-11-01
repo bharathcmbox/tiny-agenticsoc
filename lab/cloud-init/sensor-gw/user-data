@@ -1,0 +1,140 @@
+#cloud-config
+# sensor-gw: NAT gateway + DNS/DHCP for the lab, and network sensor (Zeek + Suricata on 'mon').
+hostname: sensor-gw
+fqdn: sensor-gw.${LAB_DOMAIN}
+users:
+  - name: soc
+    groups: [sudo, adm]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: false
+    passwd: "${LAB_PASSWD_HASH}"
+    ssh_authorized_keys: ["${LAB_SSH_PUBKEY}"]
+ssh_pwauth: false
+timezone: UTC
+package_update: true
+packages: [nftables, dnsmasq, ethtool, curl, gnupg, jq, tcpdump, software-properties-common]
+
+write_files:
+  - path: /etc/sysctl.d/90-router.conf
+    content: |
+      net.ipv4.ip_forward=1
+  - path: /etc/nftables.conf
+    permissions: "0755"
+    content: |
+      #!/usr/sbin/nft -f
+      flush ruleset
+      table inet filter {
+        chain input { type filter hook input priority 0; policy accept; }
+        chain forward {
+          type filter hook forward priority 0; policy drop;
+          ct state established,related accept
+          # Containment: lab hosts may reach the internet, but never the
+          # Windows host / home LAN / other private ranges behind 'wan'.
+          iifname "lan" oifname "wan" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } counter drop
+          iifname "lan" oifname "wan" accept
+        }
+      }
+      table ip nat {
+        chain postrouting { type nat hook postrouting priority 100; oifname "wan" masquerade; }
+      }
+  - path: /etc/dnsmasq.d/lab.conf
+    content: |
+      interface=lan
+      bind-interfaces
+      no-resolv
+      server=1.1.1.1
+      server=9.9.9.9
+      domain=${LAB_DOMAIN}
+      local=/${LAB_DOMAIN}/
+      log-queries
+      dhcp-authoritative
+      dhcp-range=${LAB_DHCP_START},${LAB_DHCP_END},255.255.255.0,12h
+      dhcp-option=option:router,${LAB_GW_IP}
+      dhcp-option=option:dns-server,${LAB_GW_IP}
+      dhcp-option=option:domain-search,${LAB_DOMAIN}
+      dhcp-host=${LAB_WIN_MAC},win-victim,${LAB_WIN_IP}
+      host-record=sensor-gw.${LAB_DOMAIN},sensor-gw,${LAB_GW_IP}
+      host-record=wazuh.${LAB_DOMAIN},wazuh,${LAB_WAZUH_IP}
+      host-record=win-victim.${LAB_DOMAIN},win-victim,${LAB_WIN_IP}
+      host-record=lin-victim.${LAB_DOMAIN},lin-victim,${LAB_LIN_IP}
+  - path: /etc/systemd/system/mon-nic.service
+    content: |
+      [Unit]
+      Description=Prepare mirror NIC for packet capture
+      After=network-online.target
+      Wants=network-online.target
+      Before=zeek.service suricata.service
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/sbin/ip link set mon up promisc on
+      ExecStart=-/usr/sbin/ethtool -K mon gro off lro off tso off gso off
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/zeek.service
+    content: |
+      [Unit]
+      Description=Zeek network security monitor
+      After=network-online.target mon-nic.service
+      Wants=network-online.target
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/opt/zeek/bin/zeekctl deploy
+      ExecStop=/opt/zeek/bin/zeekctl stop
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/cron.d/zeek
+    content: |
+      */5 * * * * root /opt/zeek/bin/zeekctl cron >/dev/null 2>&1
+  - path: /etc/cron.d/suricata-update
+    content: |
+      17 3 * * * root /usr/bin/suricata-update -q && /usr/bin/suricatasc -c reload-rules >/dev/null 2>&1
+  - path: /usr/local/sbin/setup-sensors.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      # Installs Zeek + Suricata sniffing the 'mon' interface. Safe to re-run.
+      set -euxo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      # --- Zeek (OBS repo, installs under /opt/zeek) ---
+      echo 'deb http://download.opensuse.org/repositories/security:/zeek/xUbuntu_24.04/ /' > /etc/apt/sources.list.d/zeek.list
+      curl -fsSL https://download.opensuse.org/repositories/security:zeek/xUbuntu_24.04/Release.key | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/zeek.gpg
+
+      # --- Suricata (OISF stable PPA) ---
+      add-apt-repository -y ppa:oisf/suricata-stable
+      apt-get update
+      apt-get install -y ${LAB_ZEEK_PKG} suricata
+
+      # Zeek: sniff mon, JSON logs, community-id for Zeek<->Suricata correlation
+      sed -i 's/^interface=.*/interface=mon/' /opt/zeek/etc/node.cfg
+      grep -q '^${LAB_SUBNET}' /opt/zeek/etc/networks.cfg || echo '${LAB_SUBNET}  lab' >> /opt/zeek/etc/networks.cfg
+      LOCAL=/opt/zeek/share/zeek/site/local.zeek
+      grep -q json-logs "$LOCAL" || cat >> "$LOCAL" <<'ZEEK'
+      @load policy/tuning/json-logs.zeek
+      @load policy/protocols/conn/community-id-logging
+      @load policy/frameworks/notice/community-id
+      ZEEK
+
+      # Suricata: sniff mon, enable community-id in eve.json, fetch ET Open rules
+      sed -i 's/^\(\s*- interface:\s*\)eth0/\1mon/' /etc/suricata/suricata.yaml
+      sed -i 's/^\(\s*community-id:\s*\)false/\1true/' /etc/suricata/suricata.yaml
+      [ -f /etc/default/suricata ] && sed -i 's/^IFACE=.*/IFACE=mon/' /etc/default/suricata
+      suricata-update -q
+
+      systemctl daemon-reload
+      systemctl enable --now mon-nic.service
+      systemctl enable zeek.service suricata.service
+      systemctl restart zeek.service suricata.service
+      echo "sensor setup complete"
+
+runcmd:
+  - sysctl --system
+  - systemctl enable --now nftables
+  - nft -f /etc/nftables.conf
+  - systemctl restart dnsmasq
+  - systemctl enable --now mon-nic.service
+  - /usr/local/sbin/setup-sensors.sh > /var/log/tiny-soc-setup.log 2>&1
+final_message: "sensor-gw ready after $UPTIME s"

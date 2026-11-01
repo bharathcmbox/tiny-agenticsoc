@@ -1,0 +1,8 @@
+# Copy to %UserProfile%\.wslconfig, then run `wsl --shutdown` from PowerShell.
+# Caps WSL so the Hyper-V lab VMs have room, and uses mirrored networking so
+# code in WSL can reach the lab subnet (10.10.10.0/24) through the host's
+# "vEthernet (LabNet)" interface.
+[wsl2]
+memory=8GB
+processors=8
+networkingMode=mirrored

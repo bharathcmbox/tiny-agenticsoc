@@ -1,0 +1,8 @@
+version: 2
+ethernets:
+  lan:
+    match: {macaddress: "${LAB_WAZUH_MAC}"}
+    set-name: lan
+    addresses: [${LAB_WAZUH_IP}/${LAB_PREFIX}]
+    routes: [{to: default, via: "${LAB_GW_IP}"}]
+    nameservers: {addresses: ["${LAB_GW_IP}"], search: ["${LAB_DOMAIN}"]}

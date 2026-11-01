@@ -1,0 +1,19 @@
+#cloud-config
+# lin-victim: Linux target for Atomic Red Team. auditd now; Wazuh agent in Phase 1.
+hostname: lin-victim
+fqdn: lin-victim.${LAB_DOMAIN}
+users:
+  - name: soc
+    groups: [sudo, adm]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: false
+    passwd: "${LAB_PASSWD_HASH}"
+    ssh_authorized_keys: ["${LAB_SSH_PUBKEY}"]
+ssh_pwauth: false
+timezone: UTC
+package_update: true
+packages: [auditd, audispd-plugins, curl, jq, gnupg]
+runcmd:
+  - systemctl enable --now auditd
+final_message: "lin-victim ready after $UPTIME s"

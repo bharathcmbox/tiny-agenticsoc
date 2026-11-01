@@ -1,0 +1,14 @@
+# secrets / local config
+lab/.secrets/
+.env
+*.pem
+# build artifacts
+*.vhdx
+*.vhd
+*.img
+*.iso
+.cache/
+# python
+__pycache__/
+.venv/
+*.pyc
