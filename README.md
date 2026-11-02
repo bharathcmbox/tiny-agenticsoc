@@ -44,6 +44,7 @@ The most common question in a pitch is *"what exactly is the AI doing?"*. Here i
 | **Triage** | **Triage agent**: Claude Haiku 5.5 | **AI agent** (one call per alert bundle) | Groups repeats of an alert. For each group decides *benign / suspicious / malicious*, names the ATT&CK technique, explains why in a sentence, and escalates or not |
 | Grouping | Incident grouper | **deterministic rules** (no AI) | Merges escalations on the same host within 30 minutes into one incident and sets its severity |
 | **Investigation** | **Investigation agent**: Claude Sonnet 5.5 | **AI agent** (tool loop, up to 16 steps) | Searches raw events, rebuilds process trees, checks network flows, finds the root cause and scope, writes a report with a timeline, IOCs and **proposed** containment |
+| Case record | DFIR-IRIS | open-source case management | Every investigated incident becomes a case: timeline filed under ATT&CK tactics, IOCs, affected hosts, the full report, and **each proposed action as a task awaiting approval**. Benign cases are closed automatically |
 | **Questions** | **Ask agent**: Claude Sonnet 5.5 | **AI agent** (tool loop, up to 10 steps) | Answers any plain-language question about the environment, with an evidence table |
 | Response | **You** | **human** | Approve or reject proposed actions. *No agent can change a system.* |
 
@@ -63,7 +64,8 @@ flowchart LR
   T -- "escalations" --> G["Incident grouping<br/>rules, no AI"]
   G --> I["Investigation agent<br/>Sonnet 5.5"]
   I --> R["Report + proposed actions"]
-  R --> H{{"Human approves"}}
+  R --> C["DFIR-IRIS case<br/>timeline · IOCs · tasks"]
+  C --> H{{"Human approves"}}
   U["Analyst"] -- "plain-language question" --> A["Ask agent<br/>Sonnet 5.5"]
   CC["Engineer in Claude Code"] -- "MCP" --> TOOLS
   A --> TOOLS["Read-only SOC tools"]
@@ -82,7 +84,9 @@ flowchart LR
 6. The **investigation agent** rebuilds the process tree back to the SSH session that started it,
    lists what was touched, and proposes: confirm whether the activity was authorised, collect
    forensics, reset the Administrator password. That costs about $0.08 and takes 20 seconds.
-7. **You** read the report and decide.
+7. The case appears in **DFIR-IRIS** with the timeline (Execution → Credential Access → Persistence →
+   Defense Evasion), the IOCs, and five `[approve?]` tasks.
+8. **You** read it and decide.
 
 Interactive versions: [architecture](docs/architecture.html) · [how the Ask path works](docs/presales.html) ·
 [how search gets into the Wazuh dashboard](docs/dashboard-options.html)
@@ -107,6 +111,7 @@ A pitch-ready walkthrough. Each step says what to show and what to say.
 
 ```bash
 cd ~/githubcode/tiny-agenticsoc
+./lab/iris/setup-iris.sh                            # DFIR-IRIS (already set up: just starts it)
 uv run --project agent python -m socagent gateway
 ```
 
@@ -118,8 +123,9 @@ the access token from `lab/.secrets/console-owner-token` into the Ask bar (Ctrl+
 | 1 | The **Wazuh dashboard** (Overview) | "This is a normal open-source SIEM. Thousands of alerts a day, from four machines. A human can't read them all." |
 | 2 | Run two real attacks: `./lab/atomics/run-plan.sh lab/atomics/demo-plan.tsv` (about 3 min) | "This is a credential dump on Windows and a privilege-escalation trick on Linux, real techniques from MITRE ATT&CK." |
 | 3 | Run the triage and grouping cycle: `uv run --project agent python -m socagent run` | "The triage agent looks at every serious alert: verdict, technique, one-line reason, cost. Then they're grouped into incidents, without AI." |
-| 4 | Investigate: `uv run --project agent python -m socagent investigate` | "Now the investigation agent works each incident like an analyst would. Watch the tool calls: search, process tree, network." |
+| 4 | Investigate: `uv run --project agent python -m socagent investigate` | "Now the investigation agent works each incident like an analyst would. Watch the tool calls: search, process tree, network. When it's done, it files a case." |
 | 5 | **Console → Incidents** (`/console/`), open the critical one | "Here's its report: root cause, timeline with evidence, scope, IOCs, proposed actions. Nothing has been changed; a human decides." |
+| 5b | Click **Open case in DFIR-IRIS** (`https://localhost:8444`) | "And this is where the SOC team works the case: timeline by ATT&CK tactic, IOCs, and the proposed actions as tasks waiting for approval." |
 | 6 | Back on Wazuh, press **Ctrl+K**: *"Which processes accessed lsass.exe today, and what started them?"* | "And anyone can just ask. Same read-only tools, answers with evidence, about 4 cents." |
 | 7 | **Console → Connect Claude Code** | "Engineers can plug the same tools into Claude Code with one command and investigate from their terminal." |
 | 8 | **Console → How it works** | Recap: the layers, what's AI and what isn't, the guardrails, the costs. |
@@ -147,8 +153,9 @@ Short on time? Skip steps 2–4. The incidents and reports from earlier runs are
   escalated as "suspicious". The investigation agent then closed them as benign, at about $0.04–0.10
   each.
 - **Detection gaps remain**: DNS beaconing and clearing bash history are not alerted on yet.
-- **Not built yet:** case management in DFIR-IRIS, carrying out approved actions through Wazuh,
-  sharing beyond localhost (Cloudflare Tunnel or Tailscale), and the automated evaluation harness.
+- **Not built yet:** carrying out approved actions through Wazuh (today approval means closing the
+  IRIS task by hand), sharing beyond localhost (Cloudflare Tunnel or Tailscale), and the automated
+  evaluation harness.
 - It is a lab: four machines, one laptop, nothing real at stake.
 
 ## 8. Build it yourself
@@ -158,10 +165,10 @@ Short on time? Skip steps 2–4. The incidents and reports from earlier runs are
 | 0. Infrastructure | Hyper-V switch, 4 VMs, NAT gateway with containment, Zeek and Suricata | [docs/phase0-infra.md](docs/phase0-infra.md) |
 | 1. Telemetry | Wazuh 4.14, agents, Sysmon, auditd, network logs in one index | [docs/phase1-telemetry.md](docs/phase1-telemetry.md) |
 | 2. Attack simulation | 17 atomics, coverage matrix, detection fixes | [docs/phase2-coverage.md](docs/phase2-coverage.md) |
-| 3. Agents | Triage, incidents, investigation, Ask console, MCP, gateway | [docs/phase3-agents.md](docs/phase3-agents.md) |
+| 3. Agents | Triage, incidents, investigation, DFIR-IRIS cases, Ask console, MCP, gateway | [docs/phase3-agents.md](docs/phase3-agents.md) |
 | 4. Evaluation | Scheduled attacks scored end to end (planned) | |
 
-Requirements: Windows 11 Pro (Hyper-V), about 32 GB RAM, WSL2 with Ubuntu, `uv`, an Anthropic API key
+Requirements: Windows 11 Pro (Hyper-V), about 32 GB RAM, WSL2 with Ubuntu and Docker, `uv`, an Anthropic API key
 (in `~/.anthropic_env` as `SOC_ANTHROPIC_API_KEY`, **not** exported in your shell, or Claude Code
 will bill API credits instead of your subscription).
 
@@ -170,7 +177,9 @@ will bill API credits instead of your subscription).
 ```bash
 uv run --project agent python -m socagent gateway        # https://localhost:8443  dashboard + Ask bar, /console/, /mcp/
 uv run --project agent python -m socagent run            # triage new alerts, group into incidents
-uv run --project agent python -m socagent investigate    # investigate new incidents
+uv run --project agent python -m socagent investigate    # investigate new incidents (and file them in DFIR-IRIS)
+uv run --project agent python -m socagent cases          # (re)push investigated incidents to DFIR-IRIS
+./lab/iris/setup-iris.sh                                 # start DFIR-IRIS: https://localhost:8444 (password in lab/.secrets/iris.env)
 uv run --project agent python -m socagent ask "what happened on lin-victim today?"
 uv run --project agent python -m socagent token add alice --cap 1.00   # guest access with a $1/day cap
 uv run --project agent python -m socagent ledger         # AI spend so far
@@ -187,6 +196,7 @@ agent/socagent/ the agentic plane
   tools.py        read-only SOC tools         mcp_server.py  the same tools over MCP
   console.py      SOC console + API           gateway.py     one URL: Wazuh + Ask bar + console + MCP
   access.py       tokens, caps, spend         static/        console page and the Ask bar
+  iris.py         incidents → DFIR-IRIS cases
 docs/           phase guides, coverage results, architecture and pre-sales pages
 ```
 

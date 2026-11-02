@@ -96,7 +96,15 @@ def about():
 def me(authorization: str | None = Header(None)):
     p = principal(authorization)
     return {"name": p.name, "role": p.role, "daily_cap_usd": p.daily_cap_usd, "spent_today_usd": access.spent_today(p.name),
-            "ask_model": S.ask_model, "dashboard_url": S.dashboard_url}
+            "ask_model": S.ask_model, "dashboard_url": S.dashboard_url, "iris_url": _iris_url()}
+
+
+def _iris_url() -> str | None:
+    f = ROOT / "lab" / ".secrets" / "iris.env"
+    if not f.exists():
+        return None
+    port = next((l.split("=", 1)[1].strip() for l in f.read_text().splitlines() if l.startswith("INTERFACE_HTTPS_PORT=")), "8444")
+    return f"https://localhost:{port}"
 
 
 @app.get("/api/status")

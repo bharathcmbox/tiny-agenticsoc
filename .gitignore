@@ -14,3 +14,5 @@ __pycache__/
 *.pyc
 # run outputs (logs can contain host details)
 results/
+# DFIR-IRIS upstream checkout (pinned tag, not ours)
+lab/iris/iris-web/

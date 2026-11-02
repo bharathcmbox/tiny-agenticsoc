@@ -1,7 +1,7 @@
 # Phase 3: The agentic plane
 
-Status: **poller, triage, incident grouping, investigation agent, MCP server and SOC console working**.
-Next: DFIR-IRIS cases, approval-gated active response, sharing the console (Tailscale or Cloudflare Tunnel).
+Status: **poller, triage, incident grouping, investigation agent, DFIR-IRIS cases, MCP server, SOC console and
+gateway working**. Next: approval-gated active response, sharing (Tailscale or Cloudflare Tunnel).
 
 ## Setup
 
@@ -34,6 +34,46 @@ uv run --project agent python -m unittest discover -s agent/tests       # groupi
 
 The ledger is `results/agent/triage.jsonl` (git-ignored): one line per bundle with the verdict,
 techniques, evidence, tokens, **cost in USD** and latency.
+
+## DFIR-IRIS case management
+
+```bash
+./lab/iris/setup-iris.sh                                  # first run: clone v2.4.29, generate secrets, start
+uv run --project agent python -m socagent cases           # push investigated incidents (investigate does it too)
+```
+
+- **Deployment** (`lab/iris/setup-iris.sh`): official DFIR-IRIS v2.4.29 images (nginx, app, worker, Postgres,
+  RabbitMQ) in Docker on WSL, about 1.2 GB RAM. Secrets are generated into `lab/.secrets/iris.env`,
+  including the admin password and a pre-set **admin API key**, so the integration needs no UI step. The
+  upstream compose file publishes on every interface, so an override (`ports: !override`) binds it to
+  **127.0.0.1:8444** only. UI: `https://localhost:8444` (user `administrator`; it uses IRIS's own
+  self-signed certificate).
+- **Mapping** (`agent/socagent/iris.py`), one case per incident, keyed by `case_soc_id = INC-…`:
+
+  | Incident / report | IRIS |
+  |---|---|
+  | title, verdict, summary, root cause, AI cost | case name and description, tags (`verdict:…`, ATT&CK IDs, hosts) |
+  | severity critical/high/medium | case severity (set by an update after create, which IRIS otherwise ignores) |
+  | hosts | assets (Windows/Linux server, lab IP) |
+  | IOCs | IOCs typed by name (`file-path`, `ip-any`, `sha256`, `account`, `regkey`…), TLP amber |
+  | timeline | timeline events, categorised by ATT&CK tactic (Credential Access, Persistence, Defense Evasion…), linked to assets |
+  | proposed actions | tasks `[approve?] action on host: target`, status *To do*, tagged `awaiting-approval` |
+  | report + triage verdicts | notes in an *AI investigation* folder |
+  | verdict benign | the case is created, then **closed** |
+
+- **Idempotent and all-or-nothing**: an existing case for the incident ID is not duplicated. If any step
+  fails after the case is created, the case is deleted, so a re-run starts clean. `investigate` pushes
+  automatically when IRIS is set up (`--no-iris` to skip). If IRIS is down, the report stays on disk and
+  `socagent cases` retries.
+- Lookup IDs (severities, IOC types, asset types, task statuses, event categories) are resolved **by name**
+  through `/manage/*/list` at runtime.
+- Gotchas found: `/case/tasks/add` needs `task_assignees_id` present even when empty (the error message
+  says "task_assignee_id is not valid anymore since v1.5.0"). Severity sent at creation is ignored. The
+  case GET API doesn't return severity (check it in the UI or DB).
+
+Result on the lab: 4 incidents became cases #2, #4, #5 and #6. Two benign incidents were closed, and
+two true positives are open (Critical and High). Case #5 (LSASS) has 5 timeline events across
+Execution → Credential Access → Persistence → Defense Evasion, 4 IOCs and 5 approval tasks.
 
 ## SOC console and MCP (pre-sales and day-to-day use)
 

@@ -157,6 +157,15 @@ def cmd_investigate(a, s: Settings):
             for n in inv.notes:
                 print(f"     note: {n}")
     print(f"spent ${total:.4f} on {len(todo)} investigation(s)")
+    if not a.no_iris:
+        from .iris import ENV_FILE
+        if ENV_FILE.exists():
+            print("pushing to DFIR-IRIS ...")
+            a.id = [i.id for i in todo]
+            try:
+                cmd_cases(a, s)
+            except Exception as e:  # IRIS down must not lose the investigation (reports are on disk)
+                print(f"  IRIS push failed ({e}); retry later with: socagent cases")
 
 
 def cmd_ask(a, s: Settings):
@@ -184,6 +193,27 @@ def cmd_ask(a, s: Settings):
 def cmd_console(a, s: Settings):
     from .console import serve
     serve(a.host, a.port)
+
+
+def cmd_cases(a, s: Settings):
+    """Push investigated incidents into DFIR-IRIS as cases (idempotent: one case per incident id)."""
+    from . import incidents as I
+    from .iris import Iris
+    iris, incs = Iris(), I.load()
+    todo = [i for i in incs if i.investigation and (not a.id or i.id in a.id)]
+    if not todo:
+        print("no investigated incidents to push (run: socagent investigate)")
+        return
+    for inc in todo:
+        path = RESULTS / "investigations" / f"{inc.id}.json"
+        if not path.exists():
+            print(f"{inc.id}: no investigation file, skipped"); continue
+        inv = json.loads(path.read_text()) | {"report_path": str(RESULTS / "investigations" / f"{inc.id}.md")}
+        cid, created = iris.push(I.asdict(inc), inv)
+        inc.investigation = {**inc.investigation, "iris_case_id": cid, "iris_url": iris.case_url(cid)}
+        I.save(incs)
+        print(f"{inc.id} -> IRIS case #{cid} {'created' if created else 'already exists'} "
+              f"[{(inv.get('report') or {}).get('verdict', inv.get('status'))}]  {iris.case_url(cid)}")
 
 
 def cmd_gateway(a, s: Settings):
@@ -225,10 +255,13 @@ def main():
     r.add_argument("--limit", type=int, default=25)
     v = sub.add_parser("investigate", help="run the investigation agent on incidents (default: all with status 'new')")
     v.add_argument("id", nargs="*"); v.add_argument("--effort", default="medium", choices=["low", "medium", "high", "xhigh"])
+    v.add_argument("--no-iris", action="store_true", help="don't push the results to DFIR-IRIS")
     q = sub.add_parser("ask", help="natural-language question over the SOC data")
     q.add_argument("question", nargs="+"); q.add_argument("--effort", default="low", choices=["low", "medium", "high"])
     c = sub.add_parser("console", help="SOC console + HTTP MCP endpoint (localhost only by default)")
     c.add_argument("--host", default="127.0.0.1"); c.add_argument("--port", type=int, default=8800)
+    cs = sub.add_parser("cases", help="push investigated incidents into DFIR-IRIS as cases")
+    cs.add_argument("id", nargs="*")
     g = sub.add_parser("gateway", help="one HTTPS address: Wazuh dashboard + Ask bar, /console, /mcp")
     g.add_argument("--host", default="127.0.0.1"); g.add_argument("--port", type=int, default=8443)
     tk = sub.add_parser("token", help="manage console/MCP guest tokens")
@@ -239,7 +272,7 @@ def main():
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway}[a.cmd](a, s)
+     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway, "cases": cmd_cases}[a.cmd](a, s)
 
 
 if __name__ == "__main__":

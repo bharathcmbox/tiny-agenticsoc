@@ -36,6 +36,7 @@ header { background: var(--surface); border-bottom: 1px solid var(--line); }
 .chip { font: 500 0.78rem var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); white-space: nowrap; }
 .chip b { color: var(--ink); font-weight: 600; }
 .chip.btn { cursor: pointer; background: var(--bg); text-decoration: none; }
+.chip[hidden] { display: none; }
 .chip.btn:hover, .chip.btn:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
 nav { max-width: 1180px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; overflow-x: auto; }
 nav button { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px; cursor: pointer; color: var(--muted); font-weight: 500; white-space: nowrap; }
@@ -122,6 +123,7 @@ dialog .row .primary { border: none; padding: 8px 16px; }
       <span class="chip" id="c-spend"></span>
       <button class="chip btn" id="c-key" type="button">Use my Anthropic key</button>
       <a class="chip btn" id="c-dash" href="https://10.10.10.10" target="_blank" rel="noopener">Wazuh dashboard ↗</a>
+      <a class="chip btn" id="c-iris" href="#" target="_blank" rel="noopener" hidden>DFIR-IRIS cases ↗</a>
     </div>
   </div>
   <nav role="tablist" aria-label="Views">
@@ -273,6 +275,7 @@ async function refreshHeader() {
   try {
     me = await (await api("api/me")).json();
     if (me.dashboard_url) $("#c-dash").href = me.dashboard_url;
+    if (me.iris_url) { $("#c-iris").href = me.iris_url; $("#c-iris").hidden = false; }
     const byo = !!store.get("tsoc-anthropic-key");
     $("#c-spend").innerHTML = byo ? "billing: <b>your key</b>" :
       me.role === "owner" ? `owner · today <b>${money(me.spent_today_usd)}</b>` :
@@ -351,14 +354,17 @@ async function loadIncidents() {
     return `<button class="inc" type="button" data-id="${esc(i.id)}"><span class="stripe ${esc(i.severity)}"></span>
       <span><div class="t">${esc(inv.title || i.title)}</div><div class="s">${esc(i.id)} · ${esc(i.hosts.join(", "))} · ${esc(i.first.slice(0, 16).replace("T", " "))} UTC · ${i.bundle_keys.length} alert bundles</div></span>
       <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><span class="pill ${i.severity === "high" ? "sev-high" : esc(i.severity)}">${esc(i.severity)}</span>
-      ${inv.verdict ? `<span class="pill ${esc(inv.verdict)}">${esc(inv.verdict.replace("_", " "))}</span>` : `<span class="pill muted">${esc(i.status)}</span>`}</span></button>`;
+      ${inv.verdict ? `<span class="pill ${esc(inv.verdict)}">${esc(inv.verdict.replace("_", " "))}</span>` : `<span class="pill muted">${esc(i.status)}</span>`}
+      ${inv.iris_case_id ? `<span class="pill muted">IRIS #${esc(inv.iris_case_id)}</span>` : ""}</span></button>`;
   }).join("") : `<p class="empty">No incidents yet.</p>`;
   document.querySelectorAll(".inc").forEach(b => b.addEventListener("click", () => openIncident(b.dataset.id)));
 }
 async function openIncident(id) {
   const d = await (await api("api/incidents/" + encodeURIComponent(id))).json();
   const R = $("#report"); R.hidden = false;
-  R.innerHTML = d.report_md ? `<div class="md">${md(d.report_md)}</div>` : `<p class="empty">${esc(id)} has not been investigated yet. Run: <code>socagent investigate ${esc(id)}</code></p>`;
+  const inv = d.incident.investigation || {};
+  const irisLink = inv.iris_url ? `<p><a href="${esc(inv.iris_url)}" target="_blank" rel="noopener">Open case #${esc(inv.iris_case_id)} in DFIR-IRIS ↗</a> · timeline, IOCs, assets, and proposed actions as tasks awaiting approval</p>` : "";
+  R.innerHTML = d.report_md ? `${irisLink}<div class="md">${md(d.report_md)}</div>` : `<p class="empty">${esc(id)} has not been investigated yet. Run: <code>socagent investigate ${esc(id)}</code></p>`;
   R.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
