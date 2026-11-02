@@ -186,6 +186,11 @@ def cmd_console(a, s: Settings):
     serve(a.host, a.port)
 
 
+def cmd_gateway(a, s: Settings):
+    from .gateway import serve
+    serve(a.host, a.port)
+
+
 def cmd_token(a, s: Settings):
     from . import access
     if a.action == "add":
@@ -224,6 +229,8 @@ def main():
     q.add_argument("question", nargs="+"); q.add_argument("--effort", default="low", choices=["low", "medium", "high"])
     c = sub.add_parser("console", help="SOC console + HTTP MCP endpoint (localhost only by default)")
     c.add_argument("--host", default="127.0.0.1"); c.add_argument("--port", type=int, default=8800)
+    g = sub.add_parser("gateway", help="one HTTPS address: Wazuh dashboard + Ask bar, /console, /mcp")
+    g.add_argument("--host", default="127.0.0.1"); g.add_argument("--port", type=int, default=8443)
     tk = sub.add_parser("token", help="manage console/MCP guest tokens")
     tk.add_argument("action", choices=["add", "list", "revoke"]); tk.add_argument("name", nargs="?")
     tk.add_argument("--cap", type=float, default=1.00, help="daily spend cap in USD on the owner's key")
@@ -232,7 +239,7 @@ def main():
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token}[a.cmd](a, s)
+     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway}[a.cmd](a, s)
 
 
 if __name__ == "__main__":

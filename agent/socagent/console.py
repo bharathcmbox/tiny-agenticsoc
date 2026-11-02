@@ -77,7 +77,9 @@ class BearerGate:
         await self.inner(scope, receive, send)
 
 
-app.mount("/mcp", BearerGate(mcp_server.streamable_http_app(streamable_http_path="/")))
+# Created once: the console and the gateway mount the same MCP app (one session manager).
+MCP_APP = BearerGate(mcp_server.streamable_http_app(streamable_http_path="/"))
+app.mount("/mcp", MCP_APP)
 
 
 @app.get("/", response_class=HTMLResponse)

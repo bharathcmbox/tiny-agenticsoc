@@ -207,9 +207,12 @@ dialog .row .primary { border: none; padding: 8px 16px; }
 const $ = s => document.querySelector(s);
 const store = { get: k => { try { return sessionStorage.getItem(k) } catch { return null } },
                 set: (k, v) => { try { v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k) } catch {} } };
+// the access token is shared with the in-dashboard "Ask the SOC" bar (same origin behind the gateway)
+const shared = { get: k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) } catch { return null } },
+                 set: (k, v) => { try { v ? (sessionStorage.setItem(k, v), localStorage.setItem(k, v)) : (sessionStorage.removeItem(k), localStorage.removeItem(k)) } catch {} } };
 const url = new URL(location.href);
-if (url.searchParams.get("token")) { store.set("tsoc-token", url.searchParams.get("token")); url.searchParams.delete("token"); history.replaceState(null, "", url.pathname + url.hash); }
-let token = store.get("tsoc-token");
+if (url.searchParams.get("token")) { shared.set("tsoc-token", url.searchParams.get("token")); url.searchParams.delete("token"); history.replaceState(null, "", url.pathname + url.hash); }
+let token = shared.get("tsoc-token");
 let me = null;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const money = v => "$" + (v ?? 0).toFixed(v < 0.1 ? 4 : 2);
@@ -222,7 +225,7 @@ function headers(extra = {}) {
 }
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: headers(opts.headers) });
-  if (r.status === 401) { showLogin("That token was not accepted."); throw new Error("auth"); }
+  if (r.status === 401) { shared.set("tsoc-token", ""); showLogin("That token was not accepted."); throw new Error("auth"); }
   return r;
 }
 
@@ -370,7 +373,7 @@ $("#c-key").addEventListener("click", () => { $("#key").value = store.get("tsoc-
 $("#keyForm").addEventListener("submit", () => { const k = $("#key").value.trim(); store.set("tsoc-anthropic-key", k.startsWith("sk-ant-") ? k : ""); refreshHeader(); });
 $("#keyClear").addEventListener("click", () => { store.set("tsoc-anthropic-key", ""); $("#keyDlg").close(); refreshHeader(); });
 function showLogin(msg) { $("#loginErr").textContent = msg || ""; if (!$("#login").open) $("#login").showModal(); }
-$("#loginForm").addEventListener("submit", () => { token = $("#tok").value.trim(); store.set("tsoc-token", token); refreshHeader(); });
+$("#loginForm").addEventListener("submit", () => { token = $("#tok").value.trim(); shared.set("tsoc-token", token); refreshHeader(); });
 
 if (!token) showLogin(); else refreshHeader();
 show(["ask", "incidents", "connect", "about"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ask");
