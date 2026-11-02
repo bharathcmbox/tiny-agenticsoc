@@ -1,0 +1,4 @@
+# Live-demo plan: two attacks that show the whole pipeline in ~3 minutes
+# id	host	technique	test	manual_command (optional)
+D01	win	T1003.001	2
+D02	lin	T1548.001	3
