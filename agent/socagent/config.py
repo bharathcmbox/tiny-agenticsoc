@@ -27,6 +27,7 @@ class Settings:
     triage_model: str
     investigate_model: str
     ask_model: str
+    dashboard_url: str
     min_level: int
     wazuh_ssh: str
     ssh_key: Path
@@ -53,6 +54,7 @@ class Settings:
             triage_model=get("TRIAGE_MODEL"),
             investigate_model=get("INVESTIGATE_MODEL"),
             ask_model=get("ASK_MODEL") or get("INVESTIGATE_MODEL"),
+            dashboard_url=get("WAZUH_DASHBOARD_URL") or "https://10.10.10.10",
             min_level=int(get("MIN_LEVEL") or 7),
             wazuh_ssh=get("WAZUH_SSH"),
             ssh_key=Path(os.path.expanduser(get("LAB_SSH_KEY"))),

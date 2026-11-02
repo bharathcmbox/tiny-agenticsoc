@@ -94,7 +94,7 @@ def about():
 def me(authorization: str | None = Header(None)):
     p = principal(authorization)
     return {"name": p.name, "role": p.role, "daily_cap_usd": p.daily_cap_usd, "spent_today_usd": access.spent_today(p.name),
-            "ask_model": S.ask_model}
+            "ask_model": S.ask_model, "dashboard_url": S.dashboard_url}
 
 
 @app.get("/api/status")
