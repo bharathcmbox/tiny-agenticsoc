@@ -40,7 +40,7 @@ Hyper-V internal switch "LabNet" 10.10.10.0/24              Windows host / WSL2
 - [x] **0. Infra:** switch, VMs, gateway, sensors → [docs/phase0-infra.md](docs/phase0-infra.md)
 - [x] **1. Telemetry:** Wazuh install, agents, Sysmon, Zeek/Suricata log shipping → [docs/phase1-telemetry.md](docs/phase1-telemetry.md)
 - [x] **2. Attack sim:** 17 atomics, coverage matrix, detection fixes (7 → 12 of 17 detected) → [docs/phase2-coverage.md](docs/phase2-coverage.md)
-- [ ] **3. Agent:** ingest → triage → investigate → IRIS case → human-approved response
+- [~] **3. Agents:** triage, incidents, investigation, SOC console with natural-language search, MCP for Claude Code (done); IRIS cases and approval-gated response (next) → [docs/phase3-agents.md](docs/phase3-agents.md) · [pre-sales walkthrough](docs/presales.html)
 - [ ] **4. Eval:** atomic-driven scorecard (detection, verdict accuracy, cost/latency per alert)
 
 ## Resource budget (32 GB host)

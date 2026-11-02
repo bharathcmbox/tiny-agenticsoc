@@ -10,20 +10,17 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 
-import anthropic
-
+from .agentloop import run_loop, short
 from .config import RESULTS
 from .incidents import Incident
-from .llm import ANTHROPIC_PRICES, LLM, split_model
-from .tools import TOOL_SPECS, SocTools
+from .llm import LLM, split_model
+from .tools import DATA_NOTES, TOOL_SPECS, SocTools
 from .triage import ENVIRONMENT
 
 INVESTIGATIONS = RESULTS / "investigations"
-FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_STEPS = 16          # model turns
 MAX_TOKENS = 16000      # per turn, thinking included
 
@@ -91,17 +88,7 @@ How to work:
 - Every timeline entry and claim must cite field values you actually saw in tool output.
 - When you have enough to support a verdict, call submit_investigation. Do not stop without calling it.
 
-Data notes:
-- Time fields are UTC. Index fields: agent.name (host), rule.id, rule.level, rule.description, location,
-  data.win.system.eventID / channel, data.win.eventdata.* (image, commandLine, parentImage, processGuid,
-  parentProcessGuid, targetImage, grantedAccess, targetFilename, targetObject, user),
-  data.audit.* (key, exe, command, auid, euid, file.name), and for network data from sensor-gw:
-  data.src_ip, data.dest_ip, data.dest_port, data.community_id, data.query, data.alert.signature.
-- Windows paths are stored with doubled backslashes; match them with wildcards on the file name
-  (e.g. data.win.eventdata.image:*rundll32.exe) rather than full paths.
-- Sysmon event IDs: 1 process create, 3 network connection, 10 process access, 11 file create,
-  13 registry value set, 22 DNS query.
-
+{DATA_NOTES}
 {ENVIRONMENT}"""
 
 
@@ -124,37 +111,6 @@ class Investigation:
     notes: list[str] = field(default_factory=list)
 
 
-def _cost(model: str, u) -> float:
-    p = ANTHROPIC_PRICES.get(model, ANTHROPIC_PRICES["claude-sonnet-5-5"])
-    return ((u.input_tokens or 0) * p["input"] + (u.cache_creation_input_tokens or 0) * p["cache_write"]
-            + (u.cache_read_input_tokens or 0) * p["cache_read"] + (u.output_tokens or 0) * p["output"]) / 1e6
-
-
-def _account(inv: Investigation, resp) -> None:
-    u = resp.usage
-    attempts = list(getattr(u, "iterations", None) or []) or [u]
-    for it in attempts:  # per-attempt source of truth when fallbacks ran; else top-level usage
-        model = getattr(it, "model", None) or resp.model
-        inv.input_tokens += it.input_tokens or 0
-        inv.cache_write_tokens += it.cache_creation_input_tokens or 0
-        inv.cache_read_tokens += it.cache_read_input_tokens or 0
-        inv.output_tokens += it.output_tokens or 0
-        inv.cost_usd += _cost(model, it)
-    if resp.model not in inv.served_by:
-        inv.served_by.append(resp.model)
-
-
-def _echo(content: list) -> list:
-    """After a mid-output fallback, drop model-internal blocks that precede the last fallback block
-    (thinking, redacted_thinking, tool_use, unpaired server_tool_use); echo everything else."""
-    idx = [i for i, b in enumerate(content) if b.type == "fallback"]
-    if not idx:
-        return content
-    cut = idx[-1]
-    keep_before = {"text"}
-    return [b for i, b in enumerate(content) if i > cut or (i < cut and b.type in keep_before)]
-
-
 def brief(inc: Incident) -> str:
     t0 = datetime.fromisoformat(inc.first.replace("+0000", "+00:00"))
     t1 = datetime.fromisoformat(inc.last.replace("+0000", "+00:00"))
@@ -174,85 +130,25 @@ def investigate(llm: LLM, model: str, tools: SocTools, inc: Incident, effort: st
     provider, m = split_model(model)
     if provider != "anthropic":
         raise SystemExit("the investigation agent uses the Anthropic API (set INVESTIGATE_MODEL=anthropic:...)")
-    client = llm.anthropic()
-    inv = Investigation(incident_id=inc.id, model=m, started=datetime.now().astimezone().isoformat(timespec="seconds"))
-    t_start = time.monotonic()
-    messages: list = [{"role": "user", "content": "Investigate this incident:\n" + brief(inc)}]
-    all_tools = TOOL_SPECS + [SUBMIT]
-    nudged = False
 
-    while inv.steps < MAX_STEPS:
-        inv.steps += 1
-        try:
-            resp = client.beta.messages.create(
-                model=m, max_tokens=MAX_TOKENS, system=SYSTEM, tools=all_tools, tool_choice={"type": "auto"},
-                output_config={"effort": effort}, cache_control={"type": "ephemeral"},
-                betas=[FALLBACK_BETA], fallbacks="default", messages=messages)
-        except anthropic.RateLimitError as e:
-            inv.notes.append(f"rate limited at step {inv.steps}: {e.message}")
-            inv.status = "error"
-            break
-        except anthropic.APIStatusError as e:
-            inv.notes.append(f"API error {e.status_code} at step {inv.steps}: {e.message}")
-            inv.status = "error"
-            break
-        _account(inv, resp)
-        for b in resp.content:
-            if b.type == "fallback":
-                inv.notes.append(f"fallback at step {inv.steps}: {b.from_.model} -> {b.to.model}")
+    def emit(e):
+        if e["type"] == "tool_result":
+            pass
+        elif e["type"] == "tool_call":
+            log(f"  step {e['step']:2d}: {e['name']}({short(e['args'])})")
+        elif e["type"] == "note":
+            log(f"  note: {e['text']}")
 
-        if resp.stop_reason == "refusal":
-            cat = getattr(getattr(resp, "stop_details", None), "category", None)
-            inv.status = "refused"
-            inv.notes.append(f"refused at step {inv.steps} (category={cat}) even after fallback")
-            break
-
-        content = _echo(resp.content)
-        messages.append({"role": "assistant", "content": content})
-        uses = [b for b in content if b.type == "tool_use"]
-
-        submit = next((b for b in uses if b.name == "submit_investigation"), None)
-        if submit:
-            inv.report = dict(submit.input)
-            inv.status = "complete"
-            log(f"  step {inv.steps:2d}: submit_investigation -> {inv.report.get('verdict')} ({inv.report.get('confidence')})")
-            break
-
-        if not uses:
-            if resp.stop_reason == "max_tokens":
-                inv.notes.append(f"max_tokens at step {inv.steps}")
-            if nudged:
-                inv.status = "no_submission"
-                break
-            nudged = True
-            messages.append({"role": "user", "content": "Submit your findings now by calling submit_investigation."})
-            continue
-
-        results = []
-        for u in uses:
-            t0 = time.monotonic()
-            out, err = tools.run(u.name, dict(u.input))
-            secs = round(time.monotonic() - t0, 2)
-            inv.tool_calls.append({"step": inv.steps, "name": u.name, "args": dict(u.input), "chars": len(out),
-                                   "error": err, "seconds": secs})
-            log(f"  step {inv.steps:2d}: {u.name}({_short(u.input)}) -> {len(out)} chars{' ERROR' if err else ''}")
-            results.append({"type": "tool_result", "tool_use_id": u.id, "content": out, **({"is_error": True} if err else {})})
-        user_turn: list = results
-        if inv.steps == MAX_STEPS - 1:
-            # one-time notice from the harness, as a text block after the tool results
-            user_turn = results + [{"type": "text", "text": "Step limit reached: call submit_investigation on your next turn with what you have."}]
-        messages.append({"role": "user", "content": user_turn})
-    else:
-        inv.status = "no_submission"
-
-    inv.seconds = round(time.monotonic() - t_start, 1)
-    inv.cost_usd = round(inv.cost_usd, 5)
-    return inv
-
-
-def _short(d: dict) -> str:
-    s = ", ".join(f"{k}={v!r}" for k, v in d.items() if k not in ("start", "end"))
-    return s if len(s) < 110 else s[:107] + "..."
+    started = datetime.now().astimezone().isoformat(timespec="seconds")
+    r = run_loop(llm.anthropic(), m, SYSTEM, "Investigate this incident:\n" + brief(inc), TOOL_SPECS + [SUBMIT],
+                 "submit_investigation", tools.run, effort=effort, max_steps=MAX_STEPS, max_tokens=MAX_TOKENS,
+                 emit=emit)
+    if r.answer:
+        log(f"  step {r.steps:2d}: submit_investigation -> {r.answer.get('verdict')} ({r.answer.get('confidence')})")
+    return Investigation(incident_id=inc.id, model=m, started=started, status=r.status, report=r.answer,
+                         steps=r.steps, tool_calls=r.tool_calls, served_by=r.served_by, input_tokens=r.input_tokens,
+                         cache_write_tokens=r.cache_write_tokens, cache_read_tokens=r.cache_read_tokens,
+                         output_tokens=r.output_tokens, cost_usd=r.cost_usd, seconds=r.seconds, notes=r.notes)
 
 
 def save(inv: Investigation) -> tuple[str, str]:
@@ -289,7 +185,7 @@ def render(inv: Investigation) -> str:
     L += ["", "## Detection gaps", ""] + ([f"- {g}" for g in r["detection_gaps"]] or ["- none"])
     L += ["", "## Open questions", ""] + ([f"- {q}" for q in r["open_questions"]] or ["- none"])
     L += ["", "## Tool calls", "", "| Step | Tool | Arguments | Result chars |", "|---|---|---|---|"]
-    L += [f"| {c['step']} | {c['name']} | `{_short(c['args'])}` | {c['chars']}{' (error)' if c['error'] else ''} |" for c in inv.tool_calls]
+    L += [f"| {c['step']} | {c['name']} | `{short(c['args'])}` | {c['chars']}{' (error)' if c['error'] else ''} |" for c in inv.tool_calls]
     if inv.notes:
         L += ["", "## Harness notes", ""] + [f"- {n}" for n in inv.notes]
     return "\n".join(L) + "\n"

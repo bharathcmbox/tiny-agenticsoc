@@ -206,8 +206,8 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <g class="node st-planned" data-id="iris" tabindex="0" role="button" aria-label="DFIR-IRIS"><rect x="110" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="532" r="4"/><text class="t" x="190" y="548" text-anchor="middle">DFIR-IRIS</text><text class="s" x="190" y="566" text-anchor="middle">case · timeline · IOCs</text></g>
   <g class="node st-planned" data-id="approval" tabindex="0" role="button" aria-label="Human approval"><rect x="110" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="662" r="4"/><text class="t" x="190" y="678" text-anchor="middle">You approve</text><text class="s" x="190" y="696" text-anchor="middle">human in the loop</text></g>
   <g class="node st-live" data-id="openrouter" tabindex="0" role="button" aria-label="Anthropic API and OpenRouter"><rect x="330" y="650" width="380" height="66" rx="6"/><circle class="dot" cx="698" cy="662" r="4"/><text class="t" x="520" y="678" text-anchor="middle">Anthropic API · OpenRouter</text><text class="s" x="520" y="696" text-anchor="middle">Haiku 5.5 triage · Sonnet 5.5 investigation</text></g>
-  <g class="node st-building" data-id="tools" tabindex="0" role="button" aria-label="SOC tools MCP server"><rect x="770" y="650" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="662" r="4"/><text class="t" x="860" y="678" text-anchor="middle">SOC tools (MCP)</text><text class="s" x="860" y="696" text-anchor="middle">search · pivot · enrich</text></g>
-  <g class="node st-planned" data-id="claude" tabindex="0" role="button" aria-label="Claude Code"><rect x="1010" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="662" r="4"/><text class="t" x="1090" y="678" text-anchor="middle">Claude Code</text><text class="s" x="1090" y="696" text-anchor="middle">ad-hoc hunting</text></g>
+  <g class="node st-live" data-id="tools" tabindex="0" role="button" aria-label="SOC tools MCP server"><rect x="770" y="650" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="662" r="4"/><text class="t" x="860" y="678" text-anchor="middle">SOC tools (MCP)</text><text class="s" x="860" y="696" text-anchor="middle">search · pivot · enrich</text></g>
+  <g class="node st-live" data-id="claude" tabindex="0" role="button" aria-label="Claude Code"><rect x="1010" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="662" r="4"/><text class="t" x="1090" y="678" text-anchor="middle">Claude Code</text><text class="s" x="1090" y="696" text-anchor="middle">ad-hoc hunting</text></g>
   <g class="node st-planned" data-id="eval" tabindex="0" role="button" aria-label="Eval harness"><rect x="1010" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="532" r="4"/><text class="t" x="1090" y="548" text-anchor="middle">Eval harness</text><text class="s" x="1090" y="566" text-anchor="middle">atomic → expected alert</text></g>
 </svg>
     </div>
@@ -388,13 +388,13 @@ const NODES = {
     inputs: "Escalated alert bundles",
     outputs: "Narrative, timeline, IOCs, a proposed response, and a DFIR-IRIS case",
     repo: "agent/ (planned)" },
-  tools: { name: "SOC tools (MCP server)", status: "building", phase: "Phase 3: tools live, MCP next",
+  tools: { name: "SOC tools (MCP server)", status: "live", phase: "Phase 3, verified",
     role: "One set of tools for both the autonomous agent and you in Claude Code. Read-only by design; the single write tool proposes rather than acts.",
     tools: [["Model Context Protocol server (Python)", "this repo"]],
     runs: "WSL2",
     inputs: "Tool calls such as search_alerts, search_archives, process_tree, zeek_by_community_id, intel_lookup",
     outputs: "Compact JSON results sized for an LLM context window",
-    repo: "agent/mcp/ (planned)" },
+    repo: "agent/socagent/tools.py · mcp_server.py" },
   openrouter: { name: "Anthropic API · OpenRouter", status: "live", phase: "Phase 3, verified",
     role: "Model access. Claude models go straight to the Anthropic API (prompt caching, server-side refusal fallback); any other model can be routed through OpenRouter. The model per role is one line in .env.",
     tools: [["Anthropic API: claude-haiku-5-5 (triage), claude-sonnet-5-5 (investigation)", "commercial API, not OSS"], ["OpenRouter (optional)", "commercial API, not OSS"]],
@@ -416,13 +416,13 @@ const NODES = {
     inputs: "Proposed action with evidence",
     outputs: "Approved call to the Wazuh API to trigger active response",
     repo: "agent/ (planned)" },
-  claude: { name: "Claude Code", status: "planned", phase: "Phase 3",
+  claude: { name: "Claude Code", status: "live", phase: "Phase 3, verified",
     role: "Interactive threat hunting. Connects to the same MCP tools so you can ask questions in plain language.",
     tools: [["Claude Code", "Anthropic, not OSS"]],
     runs: "WSL2, this repo",
     inputs: "Your questions",
     outputs: "Answers backed by the same queries the agents run",
-    repo: ".mcp.json (planned)" },
+    repo: ".mcp.json (stdio) · console /mcp/ (HTTP, token)" },
   eval: { name: "Eval harness", status: "planned", phase: "Phase 4",
     role: "Closes the loop. Runs known attacks and checks what the SOC detected and what the agents decided.",
     tools: [["Python + Invoke-AtomicRedTeam over WinRM/SSH", "this repo / MIT"]],

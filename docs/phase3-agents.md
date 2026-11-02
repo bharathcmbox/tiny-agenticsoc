@@ -1,7 +1,7 @@
 # Phase 3: The agentic plane
 
-Status: **poller, triage, incident grouping and investigation agent working**. Next: MCP server for the
-same tools (Claude Code), DFIR-IRIS cases, approval-gated active response.
+Status: **poller, triage, incident grouping, investigation agent, MCP server and SOC console working**.
+Next: DFIR-IRIS cases, approval-gated active response, sharing the console (Tailscale or Cloudflare Tunnel).
 
 ## Setup
 
@@ -34,6 +34,43 @@ uv run --project agent python -m unittest discover -s agent/tests       # groupi
 
 The ledger is `results/agent/triage.jsonl` (git-ignored): one line per bundle with the verdict,
 techniques, evidence, tokens, **cost in USD** and latency.
+
+## SOC console and MCP (pre-sales and day-to-day use)
+
+```bash
+uv run --project agent python -m socagent console               # http://localhost:8800, prints a login link with the owner token
+uv run --project agent python -m socagent token add alice --cap 1.00   # guest token, $1/day on the owner's key
+uv run --project agent python -m socagent token list | revoke alice
+uv run --project agent python -m socagent ask "which processes touched lsass today?"   # same agent, from the CLI
+```
+
+- **Console** (`console.py` + `static/console.html`): a natural-language search bar with a live trace of
+  tool calls, then an answer with an evidence table, confidence, cost and follow-up questions. It also
+  has an incident list with the investigation reports, a *Connect Claude Code* tab and a *How it works*
+  tab (`docs/presales.html`, the pre-sales walkthrough). Self-contained, works offline in the lab.
+- **Ask agent** (`ask.py`): Claude Sonnet 5.5 at effort `low`, max 10 turns, the same read-only tools,
+  and a strict `answer` tool (markdown answer, evidence rows, confidence, follow-ups). The clock goes
+  in the question so tools and system prompt cache across questions. About $0.04 and 15–20 s per
+  question on the lab data.
+- **MCP**: `mcp_server.py` (MCP Python SDK 2.x, `MCPServer`) exposes 7 read-only tools (the 5 investigation
+  tools plus `list_incidents` and `get_investigation_report`), all annotated `readOnlyHint`. It is
+  registered for this repo in `.mcp.json` (stdio, no token; Claude Code asks you to approve it once).
+  The console also serves it over streamable HTTP at `/mcp/`, behind a bearer token.
+- **Access and billing** (`access.py`): every request needs a token. The owner token is created on
+  first start in `lab/.secrets/console-owner-token`; guest tokens are stored only as SHA-256 hashes.
+  Console questions run on the owner's Anthropic key, capped per guest per UTC day (default $1). A
+  guest can paste their own key, which is sent per request and never stored. MCP spends nothing: the
+  caller's Claude reasons. Rate limit 6 questions per minute per principal. Spend goes to
+  `results/console/spend.jsonl`. Caps are checked between model turns, so a question can overrun a
+  nearly exhausted cap by one turn (a $0.03 test cap ended at $0.037).
+- **Exposure**: the console binds `127.0.0.1` only. Sharing it is a networking step (Tailscale or
+  Cloudflare Tunnel) on top of the token, cap and rate-limit layer that already exists.
+- **Shared loop** (`agentloop.py`): the investigation agent and the Ask agent use one loop: caching,
+  refusal fallback, per-attempt cost, step and spend caps, and a live event stream.
+
+Findings from building it: the Ask agent's first question surfaced (1) an earlier LSASS dump at 22:01
+that the Phase 2 matrix never counted, and (2) `wazuh-agent.exe` opening lsass with full access during
+its inventory, which would have tripped new rule 100401. It is now excluded.
 
 ## Design
 

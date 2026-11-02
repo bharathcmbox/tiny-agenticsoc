@@ -159,6 +159,48 @@ def cmd_investigate(a, s: Settings):
     print(f"spent ${total:.4f} on {len(todo)} investigation(s)")
 
 
+def cmd_ask(a, s: Settings):
+    from .ask import ask
+    from .llm import LLM, split_model
+    from .tools import SocTools
+    _, model = split_model(s.ask_model)
+
+    def emit(e):
+        if e["type"] == "tool_call":
+            print(f"  · {e['name']}({', '.join(f'{k}={v!r}' for k, v in e['args'].items())[:120]})")
+        elif e["type"] == "note":
+            print(f"  ! {e['text']}")
+    with Indexer(s) as ix:
+        r = ask(LLM(s).anthropic(), model, SocTools(ix), " ".join(a.question), effort=a.effort, emit=emit)
+    if r.answer:
+        print("\n" + r.answer["answer_markdown"] + "\n")
+        for ev in r.answer["evidence"][:8]:
+            print(f"  - {ev['time']} {ev['host']} [{ev['source']}] {ev['detail'][:140]}")
+        print(f"\nconfidence {r.answer['confidence']} · {r.steps} turns · {len(r.tool_calls)} tools · ${r.cost_usd:.4f} · {r.seconds}s")
+    else:
+        print(f"no answer: {r.status} {r.notes}")
+
+
+def cmd_console(a, s: Settings):
+    from .console import serve
+    serve(a.host, a.port)
+
+
+def cmd_token(a, s: Settings):
+    from . import access
+    if a.action == "add":
+        if not a.name:
+            sys.exit("usage: socagent token add NAME [--cap 1.00]")
+        tok = access.add_guest(a.name, a.cap)
+        print(f"guest '{a.name}' (daily cap ${a.cap:.2f}) token: {tok}\nshown once; it is stored only as a hash.")
+    elif a.action == "revoke":
+        print(f"revoked {access.revoke(a.name)} token(s) for '{a.name}'")
+    else:
+        for p in access.principals():
+            print(f"{p.name:16s} {p.role:6s} cap ${p.daily_cap_usd:5.2f}  spent today ${access.spent_today(p.name):.4f}  "
+                  f"{'REVOKED' if p.revoked else 'active'}  since {p.created}")
+
+
 def cmd_run(a, s: Settings):
     """One SOC cycle: triage everything new since the checkpoint, then regroup incidents."""
     a.since = a.until = None
@@ -178,12 +220,19 @@ def main():
     r.add_argument("--limit", type=int, default=25)
     v = sub.add_parser("investigate", help="run the investigation agent on incidents (default: all with status 'new')")
     v.add_argument("id", nargs="*"); v.add_argument("--effort", default="medium", choices=["low", "medium", "high", "xhigh"])
+    q = sub.add_parser("ask", help="natural-language question over the SOC data")
+    q.add_argument("question", nargs="+"); q.add_argument("--effort", default="low", choices=["low", "medium", "high"])
+    c = sub.add_parser("console", help="SOC console + HTTP MCP endpoint (localhost only by default)")
+    c.add_argument("--host", default="127.0.0.1"); c.add_argument("--port", type=int, default=8800)
+    tk = sub.add_parser("token", help="manage console/MCP guest tokens")
+    tk.add_argument("action", choices=["add", "list", "revoke"]); tk.add_argument("name", nargs="?")
+    tk.add_argument("--cap", type=float, default=1.00, help="daily spend cap in USD on the owner's key")
     sub.add_parser("incidents", help="group escalated verdicts into incidents and list them")
     inc = sub.add_parser("incident", help="show one incident"); inc.add_argument("id")
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate}[a.cmd](a, s)
+     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token}[a.cmd](a, s)
 
 
 if __name__ == "__main__":

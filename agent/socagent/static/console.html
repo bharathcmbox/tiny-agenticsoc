@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tiny-agenticsoc console</title>
+<style>
+/* SOC console. Slate neutrals + one signal-blue accent, semantic severity colours, Plex if installed.
+   Layout: top bar (status + spend), tabs, one working view at a time. Self-contained: works offline in the lab. */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --ink: #15212c; --muted: #5a6977; --line: #d3dbe2;
+  --accent: #0a6c95; --accent-soft: #e2f0f7;
+  --crit: #b4232c; --high: #c25e00; --med: #a87f00; --ok: #23845a;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0e151c; --surface: #16202a; --ink: #e2e9ef; --muted: #96a6b4; --line: #2d3b48;
+    --accent: #52b6dc; --accent-soft: #15344a; --crit: #f0646c; --high: #f0954a; --med: #e3c14f; --ok: #4cc38a; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0e151c; --surface: #16202a; --ink: #e2e9ef; --muted: #96a6b4; --line: #2d3b48;
+  --accent: #52b6dc; --accent-soft: #15344a; --crit: #f0646c; --high: #f0954a; --med: #e3c14f; --ok: #4cc38a; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+button, input { font: inherit; color: inherit; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+a { color: var(--accent); }
+
+header { background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1180px; margin: 0 auto; padding: 12px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.brand { font-weight: 700; letter-spacing: -0.01em; display: flex; gap: 8px; align-items: baseline; }
+.brand small { font: 500 0.75rem var(--mono); color: var(--muted); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+.chip { font: 500 0.78rem var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); white-space: nowrap; }
+.chip b { color: var(--ink); font-weight: 600; }
+.chip.btn { cursor: pointer; background: var(--bg); }
+.chip.btn:hover, .chip.btn:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+nav { max-width: 1180px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; overflow-x: auto; }
+nav button { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px; cursor: pointer; color: var(--muted); font-weight: 500; white-space: nowrap; }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+section[hidden] { display: none; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+.ask { display: flex; gap: 10px; }
+.ask input { flex: 1; min-width: 0; padding: 13px 16px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 1.05rem; }
+.ask input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.primary { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 22px; font-weight: 600; cursor: pointer; }
+.primary:disabled { opacity: 0.55; cursor: progress; }
+.primary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.examples { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 22px; }
+.examples button, .followups button { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 0.86rem; cursor: pointer; color: var(--muted); text-align: left; }
+.examples button:hover, .followups button:hover { border-color: var(--accent); color: var(--accent); }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.trace h3, .answer h3 { margin: 0 0 10px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.trace ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.trace li { font-size: 0.85rem; border-left: 2px solid var(--line); padding: 2px 0 2px 10px; }
+.trace li.run { border-left-color: var(--accent); }
+.trace li.err { border-left-color: var(--crit); }
+.trace .tool { font-family: var(--mono); font-weight: 500; }
+.trace .args { color: var(--muted); font-family: var(--mono); font-size: 0.78rem; word-break: break-word; }
+.trace .meta { color: var(--muted); font-size: 0.78rem; }
+.empty { color: var(--muted); font-size: 0.9rem; }
+.answer .md { max-width: 80ch; }
+.md h1, .md h2, .md h3 { font-size: 1.05rem; margin: 18px 0 6px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.md p { margin: 0 0 10px; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md table, table.ev { border-collapse: collapse; width: 100%; font-size: 0.86rem; margin: 6px 0 12px; }
+.md th, .md td, table.ev th, table.ev td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.md th, table.ev th { color: var(--muted); font-weight: 600; font-size: 0.78rem; }
+.tablewrap { overflow-x: auto; }
+.md pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.metaRow { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 6px; }
+.pill { font: 500 0.76rem var(--mono); padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.high, .pill.true_positive, .pill.critical { color: var(--crit); }
+.pill.medium, .pill.inconclusive { color: var(--med); }
+.pill.low, .pill.benign { color: var(--ok); }
+.pill.sev-high { color: var(--high); }
+.pill.muted { color: var(--muted); }
+.followups { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.error { color: var(--crit); }
+
+.incs { display: grid; gap: 8px; }
+.inc { display: grid; grid-template-columns: 6px 1fr auto; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px 12px 0; cursor: pointer; text-align: left; width: 100%; }
+.inc:hover, .inc:focus-visible { border-color: var(--accent); outline: none; }
+.inc .stripe { align-self: stretch; border-radius: 10px 0 0 10px; }
+.inc .t { font-weight: 600; }
+.inc .s { color: var(--muted); font-size: 0.82rem; font-family: var(--mono); }
+.stripe.critical { background: var(--crit); } .stripe.high { background: var(--high); } .stripe.medium { background: var(--med); } .stripe.low { background: var(--muted); }
+.report { margin-top: 16px; }
+
+.connect { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+.connect h3 { margin: 0 0 6px; }
+.connect ol { padding-left: 20px; margin: 8px 0 0; display: grid; gap: 10px; }
+.cmd { display: flex; gap: 8px; align-items: stretch; margin-top: 6px; }
+.cmd pre { flex: 1; margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; overflow-x: auto; font: 0.8rem/1.5 var(--mono); }
+.cmd button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 0 12px; cursor: pointer; font-size: 0.82rem; }
+.cmd button:hover { border-color: var(--accent); color: var(--accent); }
+.note { color: var(--muted); font-size: 0.85rem; }
+iframe.about { width: 100%; height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+
+dialog { border: 1px solid var(--line); border-radius: 12px; padding: 22px; background: var(--surface); color: var(--ink); max-width: 460px; width: calc(100% - 32px); }
+dialog::backdrop { background: rgba(10, 18, 26, 0.45); }
+dialog label { display: block; font-weight: 600; margin: 12px 0 4px; }
+dialog input { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+dialog .row button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+dialog .row .primary { border: none; padding: 8px 16px; }
+@media (prefers-reduced-motion: no-preference) { .trace li.run .tool::after { content: " …"; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">tiny-agenticsoc <small>SOC console</small></div>
+    <div class="chips" id="chips">
+      <span class="chip" id="c-status">connecting…</span>
+      <span class="chip" id="c-spend"></span>
+      <button class="chip btn" id="c-key" type="button">Use my Anthropic key</button>
+    </div>
+  </div>
+  <nav role="tablist" aria-label="Views">
+    <button role="tab" aria-selected="true" data-view="ask" id="t-ask">Ask</button>
+    <button role="tab" aria-selected="false" data-view="incidents" id="t-incidents">Incidents</button>
+    <button role="tab" aria-selected="false" data-view="connect" id="t-connect">Connect Claude Code</button>
+    <button role="tab" aria-selected="false" data-view="about" id="t-about">How it works</button>
+  </nav>
+</header>
+
+<main>
+  <section id="v-ask" role="tabpanel" aria-labelledby="t-ask">
+    <form class="ask" id="askForm">
+      <label for="q" class="sr" style="position:absolute;left:-9999px">Question</label>
+      <input id="q" autocomplete="off" placeholder="Ask about your environment, e.g. which processes touched lsass.exe today?" maxlength="600">
+      <button class="primary" id="askBtn" type="submit">Ask</button>
+    </form>
+    <div class="examples" id="examples"></div>
+    <div class="grid">
+      <div class="card answer" id="answer"><h3>Answer</h3><p class="empty">Ask a question in plain language. The agent searches Wazuh alerts and raw telemetry (Sysmon, auditd, Zeek, Suricata) with read-only tools and answers with the evidence it found.</p></div>
+      <div class="card trace"><h3>What the agent did</h3><ol id="trace"><li class="empty" style="border:none;padding:0">Tool calls appear here live.</li></ol></div>
+    </div>
+  </section>
+
+  <section id="v-incidents" role="tabpanel" aria-labelledby="t-incidents" hidden>
+    <div class="incs" id="incs"><p class="empty">Loading incidents…</p></div>
+    <div class="card report" id="report" hidden></div>
+  </section>
+
+  <section id="v-connect" role="tabpanel" aria-labelledby="t-connect" hidden>
+    <div class="connect">
+      <div class="card">
+        <h3>On the lab machine</h3>
+        <p class="note">The repo already registers the <code>tiny-soc</code> MCP server in <code>.mcp.json</code>. It runs over stdio and needs no token.</p>
+        <ol>
+          <li>Open a terminal in the repo and start Claude Code:
+            <div class="cmd"><pre>cd ~/githubcode/tiny-agenticsoc &amp;&amp; claude</pre><button type="button" data-copy="cd ~/githubcode/tiny-agenticsoc &amp;&amp; claude">Copy</button></div></li>
+          <li>Approve the project server <code>tiny-soc</code> when Claude Code asks. <code>/mcp</code> shows its 7 read-only tools.</li>
+          <li>Ask in plain language, for example: <em>"Use tiny-soc to rebuild the process tree for the rundll32 that touched lsass on win-victim."</em></li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>From another machine</h3>
+        <p class="note">This console also serves MCP over HTTP at <code id="mcpUrl"></code>, behind your token. Your own Claude does the reasoning, so it spends nothing on the lab's key.</p>
+        <ol>
+          <li>Add the server to Claude Code (your token is filled in):
+            <div class="cmd"><pre id="mcpCmd"></pre><button type="button" id="copyMcp">Copy</button></div></li>
+          <li>Run <code>claude</code>, then <code>/mcp</code> to check that <code>tiny-soc</code> is connected.</li>
+          <li>Try: <em>"List the incidents, then summarise INC-20261101-003 and tell me what you'd verify next."</em></li>
+        </ol>
+        <p class="note"><b>Today the console listens on localhost only.</b> To let others connect, put it behind Tailscale or a Cloudflare Tunnel. The token check, spend caps and rate limits are already built in.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-about" role="tabpanel" aria-labelledby="t-about" hidden>
+    <iframe class="about" src="about" title="How tiny-agenticsoc works"></iframe>
+  </section>
+</main>
+
+<dialog id="login">
+  <form method="dialog" id="loginForm">
+    <h2 style="margin:0 0 6px;font-size:1.2rem">Sign in</h2>
+    <p class="note" style="margin:0">Paste the access token you were given. The owner's token is printed when the console starts.</p>
+    <label for="tok">Access token</label>
+    <input id="tok" autocomplete="off" required>
+    <p class="error" id="loginErr"></p>
+    <div class="row"><button class="primary" type="submit">Continue</button></div>
+  </form>
+</dialog>
+
+<dialog id="keyDlg">
+  <form method="dialog" id="keyForm">
+    <h2 style="margin:0 0 6px;font-size:1.2rem">Use your own Anthropic key</h2>
+    <p class="note" style="margin:0">Your questions are then billed to your key, with no daily trial limit. The key stays in this browser tab's session storage, is sent with each question only, and is never stored on the server.</p>
+    <label for="key">Anthropic API key</label>
+    <input id="key" autocomplete="off" placeholder="sk-ant-…">
+    <div class="row"><button type="button" id="keyClear">Stop using my key</button><button class="primary" type="submit">Save for this tab</button></div>
+  </form>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = { get: k => { try { return sessionStorage.getItem(k) } catch { return null } },
+                set: (k, v) => { try { v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k) } catch {} } };
+const url = new URL(location.href);
+if (url.searchParams.get("token")) { store.set("tsoc-token", url.searchParams.get("token")); url.searchParams.delete("token"); history.replaceState(null, "", url.pathname + url.hash); }
+let token = store.get("tsoc-token");
+let me = null;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const money = v => "$" + (v ?? 0).toFixed(v < 0.1 ? 4 : 2);
+
+function headers(extra = {}) {
+  const h = { "Authorization": "Bearer " + token, ...extra };
+  const k = store.get("tsoc-anthropic-key");
+  if (k) h["X-Anthropic-Key"] = k;
+  return h;
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: headers(opts.headers) });
+  if (r.status === 401) { showLogin("That token was not accepted."); throw new Error("auth"); }
+  return r;
+}
+
+/* ---------- minimal Markdown (headings, lists, tables, code, bold, inline code) ---------- */
+function inline(s) {
+  return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
+}
+function md(src) {
+  const lines = String(src || "").replace(/\r/g, "").split("\n"); let out = "", i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^```/.test(l)) { let b = []; i++; while (i < lines.length && !/^```/.test(lines[i])) b.push(lines[i++]); i++; out += `<pre><code>${esc(b.join("\n"))}</code></pre>`; continue; }
+    if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      const row = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const head = row(l); i += 2; let body = "";
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { body += "<tr>" + row(lines[i++]).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>"; }
+      out += `<div class="tablewrap"><table><thead><tr>${head.map(h => `<th>${inline(h)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`; continue;
+    }
+    const h = l.match(/^(#{1,4})\s+(.*)/); if (h) { out += `<h3>${inline(h[2])}</h3>`; i++; continue; }
+    if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
+      const ordered = /^\s*\d+\./.test(l); let items = "";
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) items += `<li>${inline(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""))}</li>`;
+      out += ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`; continue;
+    }
+    if (!l.trim()) { i++; continue; }
+    let p = []; while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\s*([-*]|\d+\.)\s|\s*\|)/.test(lines[i])) p.push(lines[i++]);
+    if (!p.length) p.push(lines[i++]);
+    out += `<p>${inline(p.join(" "))}</p>`;
+  }
+  return out;
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => show(b.dataset.view)));
+function show(view) {
+  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  document.querySelectorAll("main section").forEach(s => s.hidden = s.id !== "v-" + view);
+  if (view === "incidents") loadIncidents();
+  if (location.hash.slice(1) !== view) history.replaceState(null, "", "#" + view);
+}
+
+/* ---------- header ---------- */
+async function refreshHeader() {
+  try {
+    me = await (await api("api/me")).json();
+    const byo = !!store.get("tsoc-anthropic-key");
+    $("#c-spend").innerHTML = byo ? "billing: <b>your key</b>" :
+      me.role === "owner" ? `owner · today <b>${money(me.spent_today_usd)}</b>` :
+      `trial · <b>${money(me.spent_today_usd)}</b> of ${money(me.daily_cap_usd)} today`;
+    $("#c-key").textContent = byo ? "Using your key" : "Use my Anthropic key";
+    const mcp = new URL("mcp/", location.href).href;
+    $("#mcpUrl").textContent = mcp;
+    $("#mcpCmd").textContent = `claude mcp add --transport http tiny-soc ${mcp} --header "Authorization: Bearer ${token}"`;
+    const st = await (await api("api/status")).json();
+    $("#c-status").innerHTML = `<b>${Object.keys(st.hosts).length}</b> hosts · <b>${st.alerts_24h.toLocaleString()}</b> alerts 24h · <b>${st.incidents}</b> incidents`;
+  } catch (e) { if (e.message !== "auth") $("#c-status").textContent = "lab unreachable"; }
+}
+
+/* ---------- ask ---------- */
+const EXAMPLES = ["Which processes accessed lsass.exe today, and what started them?", "What happened on lin-victim in the last 24 hours?",
+  "Was any Windows event log cleared? By whom and when?", "Which external domains did win-victim resolve today?",
+  "Summarise today's incidents and their verdicts"];
+$("#examples").innerHTML = EXAMPLES.map(e => `<button type="button">${esc(e)}</button>`).join("");
+$("#examples").addEventListener("click", e => { if (e.target.tagName === "BUTTON") { $("#q").value = e.target.textContent; run(); } });
+$("#askForm").addEventListener("submit", e => { e.preventDefault(); run(); });
+
+async function run() {
+  const q = $("#q").value.trim(); if (!q) return;
+  $("#askBtn").disabled = true; $("#askBtn").textContent = "Working";
+  $("#trace").innerHTML = ""; $("#answer").innerHTML = `<h3>Answer</h3><p class="empty">Investigating: “${esc(q)}”</p>`;
+  let last = null;
+  try {
+    const r = await api("api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || j.detail || r.statusText); }
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let k; while ((k = buf.indexOf("\n\n")) >= 0) { const chunk = buf.slice(0, k); buf = buf.slice(k + 2);
+        if (chunk.startsWith("data: ")) last = onEvent(JSON.parse(chunk.slice(6)), last); }
+    }
+  } catch (e) { if (e.message !== "auth") $("#answer").innerHTML = `<h3>Answer</h3><p class="error">${esc(e.message)}</p>`; }
+  $("#askBtn").disabled = false; $("#askBtn").textContent = "Ask"; refreshHeader();
+}
+function onEvent(e, li) {
+  const T = $("#trace");
+  if (e.type === "tool_call") {
+    const args = Object.entries(e.args).map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ");
+    li = document.createElement("li"); li.className = "run";
+    li.innerHTML = `<div class="tool">${esc(e.name)}</div><div class="args">${esc(args).slice(0, 260)}</div><div class="meta"></div>`;
+    T.appendChild(li); return li;
+  }
+  if (e.type === "tool_result" && li) { li.className = e.error ? "err" : ""; li.querySelector(".meta").textContent = `${e.seconds}s · ${e.chars.toLocaleString()} chars${e.error ? " · error, the agent will adjust" : ""}`; return li; }
+  if (e.type === "note") { const n = document.createElement("li"); n.innerHTML = `<div class="meta">${esc(e.text)}</div>`; T.appendChild(n); return li; }
+  if (e.type === "usage") return li;
+  if (e.type === "done") { renderAnswer(e); if (!T.children.length) T.innerHTML = `<li class="empty" style="border:none;padding:0">No tool calls.</li>`; }
+  return li;
+}
+function renderAnswer(e) {
+  const A = $("#answer");
+  if (!e.answer) { A.innerHTML = `<h3>Answer</h3><p class="error">No answer (${esc(e.status)}). ${esc((e.notes || []).join("; "))}</p>`; return; }
+  const a = e.answer;
+  const ev = (a.evidence || []).map(x => `<tr><td class="mono">${esc(x.time)}</td><td>${esc(x.host)}</td><td>${esc(x.source)}</td><td>${esc(x.detail)}</td></tr>`).join("");
+  A.innerHTML = `<h3>Answer</h3><div class="md">${md(a.answer_markdown)}</div>
+    ${ev ? `<h3 style="margin-top:16px">Evidence</h3><div class="tablewrap"><table class="ev"><thead><tr><th>Time (UTC)</th><th>Host</th><th>Source</th><th>Detail</th></tr></thead><tbody>${ev}</tbody></table></div>` : ""}
+    <div class="metaRow"><span class="pill ${esc(a.confidence)}">confidence ${esc(a.confidence)}</span>
+      <span class="pill muted">${e.tool_calls} tool calls · ${e.seconds}s</span>
+      <span class="pill muted">${money(e.cost_usd)} · ${esc(e.billed_to)}</span>
+      ${(e.served_by || []).length > 1 ? `<span class="pill medium">served by ${esc(e.served_by.join(" → "))}</span>` : ""}</div>
+    ${(a.follow_ups || []).length ? `<div class="followups">${a.follow_ups.map(f => `<button type="button">${esc(f)}</button>`).join("")}</div>` : ""}`;
+  A.querySelectorAll(".followups button").forEach(b => b.addEventListener("click", () => { $("#q").value = b.textContent; run(); }));
+}
+
+/* ---------- incidents ---------- */
+async function loadIncidents() {
+  const incs = await (await api("api/incidents")).json();
+  const order = { critical: 0, high: 1, medium: 2, low: 3 };
+  incs.sort((a, b) => order[a.severity] - order[b.severity] || b.first.localeCompare(a.first));
+  $("#incs").innerHTML = incs.length ? incs.map(i => {
+    const inv = i.investigation || {};
+    return `<button class="inc" type="button" data-id="${esc(i.id)}"><span class="stripe ${esc(i.severity)}"></span>
+      <span><div class="t">${esc(inv.title || i.title)}</div><div class="s">${esc(i.id)} · ${esc(i.hosts.join(", "))} · ${esc(i.first.slice(0, 16).replace("T", " "))} UTC · ${i.bundle_keys.length} alert bundles</div></span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><span class="pill ${i.severity === "high" ? "sev-high" : esc(i.severity)}">${esc(i.severity)}</span>
+      ${inv.verdict ? `<span class="pill ${esc(inv.verdict)}">${esc(inv.verdict.replace("_", " "))}</span>` : `<span class="pill muted">${esc(i.status)}</span>`}</span></button>`;
+  }).join("") : `<p class="empty">No incidents yet.</p>`;
+  document.querySelectorAll(".inc").forEach(b => b.addEventListener("click", () => openIncident(b.dataset.id)));
+}
+async function openIncident(id) {
+  const d = await (await api("api/incidents/" + encodeURIComponent(id))).json();
+  const R = $("#report"); R.hidden = false;
+  R.innerHTML = d.report_md ? `<div class="md">${md(d.report_md)}</div>` : `<p class="empty">${esc(id)} has not been investigated yet. Run: <code>socagent investigate ${esc(id)}</code></p>`;
+  R.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+
+/* ---------- copy, key, login ---------- */
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-copy], #copyMcp"); if (!b) return;
+  const text = b.id === "copyMcp" ? $("#mcpCmd").textContent : b.dataset.copy.replace(/&amp;/g, "&");
+  try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; }
+  setTimeout(() => b.textContent = "Copy", 1500);
+});
+$("#c-key").addEventListener("click", () => { $("#key").value = store.get("tsoc-anthropic-key") || ""; $("#keyDlg").showModal(); });
+$("#keyForm").addEventListener("submit", () => { const k = $("#key").value.trim(); store.set("tsoc-anthropic-key", k.startsWith("sk-ant-") ? k : ""); refreshHeader(); });
+$("#keyClear").addEventListener("click", () => { store.set("tsoc-anthropic-key", ""); $("#keyDlg").close(); refreshHeader(); });
+function showLogin(msg) { $("#loginErr").textContent = msg || ""; if (!$("#login").open) $("#login").showModal(); }
+$("#loginForm").addEventListener("submit", () => { token = $("#tok").value.trim(); store.set("tsoc-token", token); refreshHeader(); });
+
+if (!token) showLogin(); else refreshHeader();
+show(["ask", "incidents", "connect", "about"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ask");
+</script>
+</body>
+</html>

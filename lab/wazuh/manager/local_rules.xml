@@ -69,12 +69,13 @@
   </rule>
 
   <!-- Full or VM_READ-style access to lsass.exe from something that is not a known system reader.
-       sysmon-modular already filters most benign Event 10 noise at the source. -->
+       sysmon-modular already filters most benign Event 10 noise at the source. wazuh-agent.exe reads
+       lsass during process inventory (found by the console search agent). -->
   <rule id="100401" level="13">
     <if_group>sysmon_event_10</if_group>
     <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
     <field name="win.eventdata.grantedAccess" type="pcre2">(?i)^0x(1fffff|1f0fff|1f1fff|1f2fff|1f3fff|1010|1410|1418|1438|143a)$</field>
-    <field name="win.eventdata.sourceImage" type="pcre2" negate="yes">(?i)\\(MsMpEng|wininit|csrss|services|svchost|lsm|wmiprvse|taskmgr)\.exe$</field>
+    <field name="win.eventdata.sourceImage" type="pcre2" negate="yes">(?i)\\(MsMpEng|wininit|csrss|services|svchost|lsm|wmiprvse|taskmgr|wazuh-agent)\.exe$</field>
     <description>Process $(win.eventdata.sourceImage) opened lsass.exe with access $(win.eventdata.grantedAccess)</description>
     <mitre><id>T1003.001</id></mitre>
   </rule>

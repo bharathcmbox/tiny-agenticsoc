@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "tiny-soc": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "agent",
+        "python",
+        "-m",
+        "socagent.mcp_server"
+      ],
+      "env": {}
+    }
+  }
+}

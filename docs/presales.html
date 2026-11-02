@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask your SOC in plain language</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Pre-sales walkthrough. Same system as the architecture page: slate neutrals, signal-blue for the question path,
+   teal for the Claude Code path, numbered markers tying the diagram to the step list. */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --ink: #15212c; --muted: #5a6977; --line: #c6d0d9;
+  --accent: #0a6c95; --accent-soft: #e2f0f7; --alt: #1f7a6a; --alt-soft: #dff1ec;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0e151c; --surface: #16202a; --ink: #e2e9ef; --muted: #96a6b4; --line: #2d3b48;
+    --accent: #52b6dc; --accent-soft: #15344a; --alt: #4cc3ab; --alt-soft: #123a33; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0e151c; --surface: #16202a; --ink: #e2e9ef; --muted: #96a6b4; --line: #2d3b48;
+  --accent: #52b6dc; --accent-soft: #15344a; --alt: #4cc3ab; --alt-soft: #123a33; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--sans); }
+main { max-width: 1200px; margin: 0 auto; padding: 40px 20px 72px; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0 0 12px; }
+h1 { font-size: 2.1rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.05rem; }
+p { margin: 0 0 12px; }
+code { font-family: var(--mono); font-size: 0.86em; }
+.prose { max-width: 70ch; }
+.kicker { font: 500 0.8rem var(--mono); color: var(--muted); letter-spacing: 0.04em; margin-bottom: 8px; }
+.lede { font-size: 1.15rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+.diagram { overflow-x: auto; padding: 12px; }
+.diagram svg { display: block; width: 100%; min-width: 940px; height: auto; color: var(--ink); }
+figure { margin: 0; }
+figcaption { color: var(--muted); font-size: 0.92rem; margin-top: 10px; max-width: 95ch; }
+
+svg .zone rect { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 3 4; }
+svg .zone text { font: 500 11px var(--mono); fill: var(--muted); }
+svg .n rect { fill: var(--surface); stroke: var(--muted); stroke-width: 1.4; }
+svg .n.q rect { stroke: var(--accent); stroke-width: 2; }
+svg .n.c rect { stroke: var(--alt); stroke-width: 2; }
+svg .n.both rect { stroke: var(--ink); stroke-width: 1.6; }
+svg .n .t { font: 600 13px var(--sans); fill: var(--ink); }
+svg .n .s { font: 400 10.5px var(--mono); fill: var(--muted); }
+svg .e path { fill: none; stroke-width: 1.8; }
+svg .e.q path { stroke: var(--accent); marker-end: url(#aq); }
+svg .e.c path { stroke: var(--alt); marker-end: url(#ac); }
+svg .e.p path { stroke: var(--muted); stroke-width: 1.3; marker-end: url(#ap); }
+svg .e text { font: 400 11px var(--sans); fill: var(--muted); }
+svg .num circle { stroke: none; }
+svg .num.q circle { fill: var(--accent); }
+svg .num.c circle { fill: var(--alt); }
+svg .num text { font: 600 11px var(--sans); fill: #fff; }
+svg .mk-q { fill: var(--accent); } svg .mk-c { fill: var(--alt); } svg .mk-p { fill: var(--muted); }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 20px; }
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 12px; }
+ol.steps li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; }
+ol.steps li::before { counter-increment: s; content: counter(s); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 0.8rem var(--sans); color: #fff; background: var(--accent); }
+ol.steps.c li::before { content: counter(s, upper-alpha); background: var(--alt); }
+ol.plain { padding-left: 20px; margin: 0; display: grid; gap: 10px; }
+pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font: 0.82rem/1.5 var(--mono); margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.fact { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+.fact b { display: block; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.fact span { color: var(--muted); font-size: 0.9rem; }
+.tag { display: inline-block; font: 500 0.76rem var(--mono); padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.tag.q { color: var(--accent); } .tag.c { color: var(--alt); }
+ul.tight { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+footer { color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+
+<header class="prose">
+  <div class="kicker">tiny-agenticsoc · how it works · 1 Nov 2026</div>
+  <h1>Ask your SOC in plain language</h1>
+  <p class="lede">Type a question like <em>"which processes touched lsass.exe today, and what started them?"</em>. An AI analyst searches your SIEM and network telemetry with read-only tools, then answers with the exact events that prove it.</p>
+  <p>There are two ways in, over the same data and the same tools. <span class="tag q">SOC console</span> is a search bar in the browser, with nothing to install. <span class="tag c">Claude Code</span> connects your own Claude over MCP, so your engineers can investigate from their terminal.</p>
+</header>
+
+<section>
+  <figure class="card diagram">
+<svg viewBox="0 0 1200 640" role="img" aria-label="Two entry points share one gateway. A question typed in the SOC console passes an access check, then an Ask agent running Claude plans and calls read-only SOC tools, which query the Wazuh indexer through an SSH tunnel; the answer returns with evidence and its cost is logged. Claude Code connects to the gateway's MCP endpoint and calls the same read-only tools directly, reasoning with the user's own Claude. Below, an always-on detection pipeline turns sensor data into alerts, incidents and investigation reports that both paths can read.">
+  <defs>
+    <marker id="aq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-q" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-c" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk-p" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <g class="zone"><rect x="20" y="30" width="200" height="420" rx="10"/><text x="32" y="50">people</text></g>
+  <g class="zone"><rect x="270" y="30" width="330" height="420" rx="10"/><text x="282" y="50">gateway · SOC console (FastAPI, on the lab host)</text></g>
+  <g class="zone"><rect x="650" y="30" width="530" height="420" rx="10"/><text x="662" y="50">read-only data access</text></g>
+  <g class="zone"><rect x="20" y="480" width="1160" height="140" rx="10"/><text x="32" y="500">detection pipeline · always on · feeds what both paths read</text></g>
+
+  <!-- edges: question path -->
+  <g class="e q"><path d="M200,120 H300"/></g>
+  <g class="e q"><path d="M435,152 V190"/></g>
+  <g class="e q"><path d="M570,215 H700"/><text x="635" y="207" text-anchor="middle">plans with</text></g>
+  <g class="e q"><path d="M480,246 V286 H700"/><text x="590" y="279" text-anchor="middle">tool calls</text></g>
+  <g class="e q"><path d="M900,304 H960"/></g>
+  <g class="e q"><path d="M300,232 H250 V140 H200"/></g>
+  <g class="e q"><path d="M400,246 V268"/></g>
+  <!-- edges: Claude Code path -->
+  <g class="e c"><path d="M200,348 H300"/></g>
+  <g class="e c"><path d="M570,350 H610 V330 H700"/></g>
+  <g class="e c"><path d="M300,372 H200"/></g>
+  <!-- pipeline edges -->
+  <g class="e p"><path d="M215,560 H265"/></g>
+  <g class="e p"><path d="M430,560 H480"/></g>
+  <g class="e p"><path d="M645,560 H695"/></g>
+  <g class="e p"><path d="M860,560 H910"/></g>
+  <g class="e p"><path d="M1060,530 V412"/><text x="1068" y="500">reports</text></g>
+  <g class="e p"><path d="M400,530 V466 H1172 V303 H1160"/><text x="760" y="460" text-anchor="middle">alerts + raw events</text></g>
+
+  <!-- numbered markers -->
+  <g class="num q"><circle cx="250" cy="120" r="10"/><text x="250" y="124" text-anchor="middle">1</text></g>
+  <g class="num q"><circle cx="435" cy="171" r="10"/><text x="435" y="175" text-anchor="middle">2</text></g>
+  <g class="num q"><circle cx="605" cy="215" r="10"/><text x="605" y="219" text-anchor="middle">3</text></g>
+  <g class="num q"><circle cx="660" cy="286" r="10"/><text x="660" y="290" text-anchor="middle">4</text></g>
+  <g class="num q"><circle cx="930" cy="304" r="10"/><text x="930" y="308" text-anchor="middle">5</text></g>
+  <g class="num q"><circle cx="250" cy="186" r="10"/><text x="250" y="190" text-anchor="middle">6</text></g>
+  <g class="num q"><circle cx="385" cy="257" r="10"/><text x="385" y="261" text-anchor="middle">7</text></g>
+  <g class="num c"><circle cx="250" cy="348" r="10"/><text x="250" y="352" text-anchor="middle">A</text></g>
+  <g class="num c"><circle cx="655" cy="330" r="10"/><text x="655" y="334" text-anchor="middle">B</text></g>
+  <g class="num c"><circle cx="250" cy="372" r="10"/><text x="250" y="376" text-anchor="middle">C</text></g>
+
+  <!-- people -->
+  <g class="n q"><rect x="40" y="80" width="160" height="80" rx="8"/><text class="t" x="120" y="110" text-anchor="middle">Analyst · prospect</text><text class="s" x="120" y="128" text-anchor="middle">browser, no install</text><text class="s" x="120" y="144" text-anchor="middle">SOC console</text></g>
+  <g class="n c"><rect x="40" y="320" width="160" height="80" rx="8"/><text class="t" x="120" y="350" text-anchor="middle">Engineer</text><text class="s" x="120" y="368" text-anchor="middle">Claude Code + MCP</text><text class="s" x="120" y="384" text-anchor="middle">their own model</text></g>
+
+  <!-- gateway -->
+  <g class="n both"><rect x="300" y="88" width="270" height="64" rx="8"/><text class="t" x="435" y="114" text-anchor="middle">Access check</text><text class="s" x="435" y="134" text-anchor="middle">token · rate limit · daily cap · own key</text></g>
+  <g class="n q"><rect x="300" y="190" width="270" height="56" rx="8"/><text class="t" x="435" y="214" text-anchor="middle">Ask agent</text><text class="s" x="435" y="232" text-anchor="middle">tool loop · answer with evidence</text></g>
+  <g class="n c"><rect x="300" y="330" width="270" height="56" rx="8"/><text class="t" x="435" y="354" text-anchor="middle">MCP endpoint  /mcp</text><text class="s" x="435" y="372" text-anchor="middle">same tools · bearer token</text></g>
+  <g class="n"><rect x="300" y="268" width="170" height="40" rx="8"/><text class="t" x="385" y="286" text-anchor="middle">Spend ledger</text><text class="s" x="385" y="300" text-anchor="middle">cost per answer</text></g>
+
+  <!-- data access -->
+  <g class="n q"><rect x="700" y="188" width="200" height="56" rx="8"/><text class="t" x="800" y="212" text-anchor="middle">Claude (Anthropic API)</text><text class="s" x="800" y="230" text-anchor="middle">Sonnet 5.5 · our key or yours</text></g>
+  <g class="n both"><rect x="700" y="270" width="200" height="140" rx="8"/><text class="t" x="800" y="294" text-anchor="middle">Read-only SOC tools</text>
+    <text class="s" x="800" y="316" text-anchor="middle">search_events</text><text class="s" x="800" y="332" text-anchor="middle">host_timeline</text>
+    <text class="s" x="800" y="348" text-anchor="middle">process_tree</text><text class="s" x="800" y="364" text-anchor="middle">network_flows · top_values</text>
+    <text class="s" x="800" y="380" text-anchor="middle">list_incidents</text><text class="s" x="800" y="396" text-anchor="middle">get_investigation_report</text></g>
+  <g class="n"><rect x="960" y="78" width="200" height="74" rx="8"/><text class="t" x="1060" y="104" text-anchor="middle">Guardrails</text><text class="s" x="1060" y="122" text-anchor="middle">no write path anywhere</text><text class="s" x="1060" y="138" text-anchor="middle">answers cite raw events</text></g>
+  <g class="n both"><rect x="960" y="270" width="200" height="66" rx="8"/><text class="t" x="1060" y="294" text-anchor="middle">Wazuh indexer</text><text class="s" x="1060" y="312" text-anchor="middle">alerts + every raw event</text><text class="s" x="1060" y="326" text-anchor="middle">SSH tunnel · read-only user</text></g>
+  <g class="n both"><rect x="960" y="350" width="200" height="62" rx="8"/><text class="t" x="1060" y="374" text-anchor="middle">Incidents + reports</text><text class="s" x="1060" y="392" text-anchor="middle">from the AI pipeline below</text></g>
+
+  <!-- pipeline -->
+  <g class="n"><rect x="40" y="530" width="175" height="62" rx="8"/><text class="t" x="127" y="553" text-anchor="middle">Sensors</text><text class="s" x="127" y="570" text-anchor="middle">Sysmon · auditd</text><text class="s" x="127" y="584" text-anchor="middle">Zeek · Suricata</text></g>
+  <g class="n"><rect x="265" y="530" width="165" height="62" rx="8"/><text class="t" x="347" y="556" text-anchor="middle">Wazuh</text><text class="s" x="347" y="574" text-anchor="middle">decode · detect · store</text></g>
+  <g class="n"><rect x="480" y="530" width="165" height="62" rx="8"/><text class="t" x="562" y="556" text-anchor="middle">Triage</text><text class="s" x="562" y="574" text-anchor="middle">Claude Haiku 5.5</text></g>
+  <g class="n"><rect x="695" y="530" width="165" height="62" rx="8"/><text class="t" x="777" y="556" text-anchor="middle">Incident grouping</text><text class="s" x="777" y="574" text-anchor="middle">rules, no LLM</text></g>
+  <g class="n"><rect x="910" y="530" width="250" height="62" rx="8"/><text class="t" x="1035" y="556" text-anchor="middle">Investigation</text><text class="s" x="1035" y="574" text-anchor="middle">Sonnet 5.5 · proposes only</text></g>
+</svg>
+    <figcaption><b>Blue (1–7):</b> a question in the SOC console. The gateway checks access, the Ask agent reasons with Claude, calls read-only tools against the SIEM, and returns a cited answer. <b>Teal (A–C):</b> Claude Code connects to the same tools over MCP and reasons with its own model. <b>Bottom:</b> the always-on pipeline that turns telemetry into alerts, incidents and investigation reports, which both paths can read.</figcaption>
+  </figure>
+</section>
+
+<section class="two">
+  <div class="card">
+    <h2>What happens when you ask</h2>
+    <ol class="steps">
+      <li><div><b>You ask in the console.</b> Plain language, up to 600 characters. Example questions are one click away.</div></li>
+      <li><div><b>The gateway checks access.</b> Every request needs a token. Guests get a daily trial budget on the lab's key and a rate limit, or they paste their own Anthropic key, which is used for that request and never stored.</div></li>
+      <li><div><b>The Ask agent plans.</b> Claude Sonnet 5.5 decides what to look for. You watch each step live in the trace panel.</div></li>
+      <li><div><b>It calls read-only tools.</b> Search alerts and raw events, rebuild a process tree from Sysmon, pull Zeek and Suricata flows, count top values.</div></li>
+      <li><div><b>The tools query the SIEM.</b> They go through an SSH tunnel as a read-only indexer user. The SIEM is never exposed on the network, and there is no write path.</div></li>
+      <li><div><b>You get a cited answer.</b> The direct answer first, then an evidence table (time, host, source, field values), a confidence level and suggested follow-up questions.</div></li>
+      <li><div><b>The cost is logged.</b> Every answer shows its price and who paid. The ledger enforces daily caps per guest.</div></li>
+    </ol>
+  </div>
+  <div class="card">
+    <h2>Or bring your own Claude</h2>
+    <ol class="steps c">
+      <li><div><b>Add the MCP server to Claude Code.</b> One command, which the console's <i>Connect Claude Code</i> tab shows with your token filled in:
+        <pre class="cmd">claude mcp add --transport http tiny-soc https://&lt;console&gt;/mcp/ --header "Authorization: Bearer &lt;token&gt;"</pre></div></li>
+      <li><div><b>Claude Code calls the same tools.</b> The same seven read-only tools, the same guardrails, the same token check.</div></li>
+      <li><div><b>Results come back to your terminal.</b> Your Claude does the reasoning, so the lab spends nothing. It suits engineers who want to pivot, script and dig deeper.</div></li>
+    </ol>
+    <h3 style="margin-top:22px">Questions that work well</h3>
+    <ul class="tight">
+      <li>Which processes accessed lsass.exe today, and what started them?</li>
+      <li>What happened on lin-victim in the last 24 hours?</li>
+      <li>Was any event log cleared? By whom and when?</li>
+      <li>Which external domains did win-victim resolve today?</li>
+      <li>Summarise today's incidents and what you'd verify next.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Try it in five minutes</h2>
+  <div class="two">
+    <div>
+      <h3><span class="tag q">SOC console</span></h3>
+      <ol class="plain">
+        <li>Open the link you were sent. It carries your access token, or the console asks for it.</li>
+        <li>Click an example question, or type your own.</li>
+        <li>Watch the trace panel: each tool call, how long it took, how much data came back.</li>
+        <li>Read the answer and its evidence table. Click a follow-up to keep pulling the thread.</li>
+        <li>Open <b>Incidents</b> to read the investigation agent's reports on what the pipeline detected.</li>
+        <li>Out of trial budget? Use <b>Use my Anthropic key</b> to continue on your own key.</li>
+      </ol>
+    </div>
+    <div>
+      <h3><span class="tag c">Claude Code</span></h3>
+      <ol class="plain">
+        <li>Install Claude Code if you don't have it.</li>
+        <li>Copy the <code>claude mcp add …</code> command from the console's <b>Connect Claude Code</b> tab.</li>
+        <li>Start <code>claude</code> and run <code>/mcp</code> to confirm that <code>tiny-soc</code> is connected.</li>
+        <li>Ask: <em>"List the incidents, then rebuild the process tree for the LSASS dump on win-victim."</em></li>
+        <li>Keep going: ask it to write a detection rule for what it found, or a timeline for a report.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Measured on the lab</h2>
+  <div class="facts">
+    <div class="fact"><b>$0.0008</b><span>to triage one alert bundle (Claude Haiku 5.5)</span></div>
+    <div class="fact"><b>$0.04 – $0.10</b><span>per incident investigation, 20–25 s (Claude Sonnet 5.5)</span></div>
+    <div class="fact"><b>~$0.04</b><span>per console question, typically 3 tool calls and under 20 s</span></div>
+    <div class="fact"><b>4 / 4</b><span>lab incidents called correctly: two attacks, two benign admin actions</span></div>
+    <div class="fact"><b>$0</b><span>to the lab when you connect your own Claude over MCP</span></div>
+  </div>
+</section>
+
+<section class="two">
+  <div class="card">
+    <h2>Why you can trust the answers</h2>
+    <ul class="tight">
+      <li><b>Read-only by construction.</b> The indexer user cannot write. No tool changes a host. Containment is only ever <em>proposed</em> for a human to approve.</li>
+      <li><b>Evidence, not vibes.</b> Answers cite timestamps, hosts and field values from raw events, and say what was <em>not</em> checked.</li>
+      <li><b>Everything is visible.</b> Each tool call appears in the trace, and every answer shows its cost and the model that produced it.</li>
+      <li><b>Open source underneath.</b> Wazuh, Sysmon, Zeek, Suricata and Atomic Red Team. Claude adds the analyst.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>Where it runs today</h2>
+    <ul class="tight">
+      <li>A single laptop: Hyper-V VMs for the victims, sensor and SIEM, and WSL2 for the agents and console.</li>
+      <li>The console listens on <code>localhost</code>. Sharing it with others is a networking step (Tailscale or Cloudflare Tunnel). Token checks, rate limits and spend caps are already in place.</li>
+      <li>Models are one line of configuration: Claude through the Anthropic API by default, or any OpenRouter model.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>tiny-agenticsoc · built hands-on with Claude Code · open-source SOC stack + Claude agents</footer>
+</main>
+</body>
+</html>

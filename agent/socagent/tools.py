@@ -16,6 +16,18 @@ MAX_CHARS = 9000
 INDEX = {"alerts": "wazuh-alerts-*", "archives": "wazuh-archives-*"}
 SYSMON = "Microsoft-Windows-Sysmon/Operational"
 
+# Field reference shared by every agent prompt and the MCP server instructions.
+DATA_NOTES = """Data notes:
+- Time fields are UTC. Index fields: agent.name (host), rule.id, rule.level, rule.description, location,
+  data.win.system.eventID / channel, data.win.eventdata.* (image, commandLine, parentImage, processGuid,
+  parentProcessGuid, targetImage, grantedAccess, targetFilename, targetObject, user),
+  data.audit.* (key, exe, command, auid, euid, file.name), and for network data from sensor-gw:
+  data.src_ip, data.dest_ip, data.dest_port, data.community_id, data.query, data.alert.signature.
+- Windows paths are stored with doubled backslashes; match them with wildcards on the file name
+  (e.g. data.win.eventdata.image:*rundll32.exe) rather than full paths.
+- Sysmon event IDs: 1 process create, 3 network connection, 10 process access, 11 file create,
+  13 registry value set, 22 DNS query."""
+
 
 def _clip(obj) -> str:
     s = json.dumps(obj, ensure_ascii=False, default=str)
@@ -117,7 +129,7 @@ class SocTools:
         def node(src):
             w = src["data"]["win"]["eventdata"]
             return {"t": src.get("timestamp"), "guid": w.get("processGuid"), "pid": w.get("processId"),
-                    "image": _txt(w.get("image", "")), "user": w.get("user"),
+                    "image": _txt(w.get("image", "")), "user": _txt(w.get("user") or ""),
                     "integrity": w.get("integrityLevel"),
                     "cmd": _txt(w.get("commandLine") or "")[:500]}
 
