@@ -1,7 +1,7 @@
 # Phase 3: The agentic plane
 
-Status: **poller, triage, incident grouping, investigation agent, DFIR-IRIS cases, MCP server, SOC console and
-gateway working**. Next: approval-gated active response, sharing (Tailscale or Cloudflare Tunnel).
+Status: **poller, triage, incident grouping, investigation agent, DFIR-IRIS cases, approval-gated active response,
+MCP server, SOC console and gateway working**. Next: sharing (Tailscale or Cloudflare Tunnel), evaluation harness.
 
 ## Setup
 
@@ -74,6 +74,56 @@ uv run --project agent python -m socagent cases           # push investigated in
 Result on the lab: 4 incidents became cases #2, #4, #5 and #6. Two benign incidents were closed, and
 two true positives are open (Critical and High). Case #5 (LSASS) has 5 timeline events across
 Execution → Credential Access → Persistence → Defense Evasion, 4 IOCs and 5 approval tasks.
+
+## Approval-gated active response
+
+```bash
+python3 lab/wazuh/manager/setup-responder.py                  # once: least-privilege Wazuh API user
+uv run --project agent python -m socagent respond plan        # proposals from investigated incidents
+uv run --project agent python -m socagent respond selftest    # harmless test artifacts + 8 test actions per victim
+uv run --project agent python -m socagent respond approve act-…  [--target "exact target"]
+uv run --project agent python -m socagent respond reject act-… --reason "…"   |   respond done act-… --note "…"
+```
+
+Or use the console's **Response** tab (owner token only): each proposal shows the reason, an editable
+**exact target** and the Wazuh API call it will send, with **Approve & run** / **Reject** (or **Mark done**
+for manual actions).
+
+How a decision flows:
+
+1. **Proposal**: the investigation agent's `proposed_actions` are mapped to allowlisted actions, and the
+   target is pre-filled from the report (e.g. a file name becomes the full path from the IOCs; "scheduled
+   task 'spawn'" becomes `spawn`). Credential resets, forensics and anything else stay **manual**.
+2. **Approval**: a human confirms or edits the exact target. It is validated server-side (no shell
+   metacharacters, absolute paths, IPv4 for blocks, 1–240 minutes for isolation).
+3. **Dispatch**: `PUT /active-response` with the `soc-responder` API user (policy: only
+   `active-response:command`, plus `agent:read` to map host names; rules, config, restarts and users
+   all return 403). The command is `!tsoc-ar` (Linux, Python) or `!tsoc-ar.cmd` → PowerShell (Windows).
+4. **Execution on the host** (`lab/wazuh/active-response/`): the script does the execd `check_keys`
+   handshake, validates again, and **refuses protected targets** (lsass, sshd, the Wazuh agent, root,
+   soc, Administrator, lab infrastructure IPs, system paths). It acts reversibly: files and cron files
+   are moved to quarantine with a SHA-256, scheduled tasks are exported to XML before removal, and
+   isolation releases itself (`systemd-run` timer / one-shot scheduled task). The result is logged as one
+   JSON line in `active-responses.log`.
+5. **Verification**: Wazuh decodes that line (rules 100500 at level 5, 100501 for refused or failed at
+   level 6, both below the triage threshold so the AI never triages its own actions). The gate polls the
+   archives for the action ID and records the host's own report.
+6. **Record**: the IRIS task gets its status (Done / Canceled / On hold) and a comment with who, when,
+   the command and the result. Every step is appended to `results/agent/response/audit.jsonl`.
+   Approving an isolation adds a "release early" proposal.
+
+| Action | Windows | Linux | Reversible |
+|---|---|---|---|
+| kill_process (name or PID) | Stop-Process | kill / pkill -x | – |
+| quarantine_file | move to C:\ProgramData\tsoc-quarantine | move to /var/ossec/quarantine, chmod 000 | yes |
+| remove_persistence | scheduled task (exported first) | cron file / systemd unit → quarantine | yes |
+| disable_account | Disable-LocalUser | usermod --lock --expiredate 1 + kill sessions | yes |
+| block_ip | firewall rules (group `tsoc`) | nft table `inet tsoc_block` | release_host |
+| isolate_host (minutes) | default-deny firewall except SIEM + admin, auto-release task | nft default-drop except SIEM + admin, systemd timer | auto + release_host |
+
+Execution is deliberately **not** something Claude does: when building this, the attempt to approve the
+first action from the agent session was blocked by Claude Code's safety check. That's the design
+working: approval belongs to the human.
 
 ## SOC console and MCP (pre-sales and day-to-day use)
 

@@ -46,7 +46,7 @@ The most common question in a pitch is *"what exactly is the AI doing?"*. Here i
 | **Investigation** | **Investigation agent**: Claude Sonnet 5.5 | **AI agent** (tool loop, up to 16 steps) | Searches raw events, rebuilds process trees, checks network flows, finds the root cause and scope, writes a report with a timeline, IOCs and **proposed** containment |
 | Case record | DFIR-IRIS | open-source case management | Every investigated incident becomes a case: timeline filed under ATT&CK tactics, IOCs, affected hosts, the full report, and **each proposed action as a task awaiting approval**. Benign cases are closed automatically |
 | **Questions** | **Ask agent**: Claude Sonnet 5.5 | **AI agent** (tool loop, up to 10 steps) | Answers any plain-language question about the environment, with an evidence table |
-| Response | **You** | **human** | Approve or reject proposed actions. *No agent can change a system.* |
+| Response | **You** + Wazuh active response | **human decision**, executed by an allowlisted script | Approve the exact command in the console (or reject it). It runs through Wazuh with a least-privilege API user, the host reports back through the SIEM, and the IRIS task and audit log record it. *No agent can change a system.* |
 
 **What the agents cannot do:** they have no write access anywhere. The SIEM user they log in as is
 read-only, the tools only search, and "isolate host" is only ever a suggestion in a report.
@@ -66,6 +66,7 @@ flowchart LR
   I --> R["Report + proposed actions"]
   R --> C["DFIR-IRIS case<br/>timeline · IOCs · tasks"]
   C --> H{{"Human approves"}}
+  H -- "Wazuh active response" --> V
   U["Analyst"] -- "plain-language question" --> A["Ask agent<br/>Sonnet 5.5"]
   CC["Engineer in Claude Code"] -- "MCP" --> TOOLS
   A --> TOOLS["Read-only SOC tools"]
@@ -86,7 +87,9 @@ flowchart LR
    forensics, reset the Administrator password. That costs about $0.08 and takes 20 seconds.
 7. The case appears in **DFIR-IRIS** with the timeline (Execution → Credential Access → Persistence →
    Defense Evasion), the IOCs, and five `[approve?]` tasks.
-8. **You** read it and decide.
+8. **You** open the console's **Response** tab, confirm the exact target (e.g. the dump file's full path)
+   and click **Approve & run**. Wazuh sends it to the host, the host quarantines the file and reports
+   back, and the IRIS task is marked Done with the result.
 
 Interactive versions: [architecture](docs/architecture.html) · [how the Ask path works](docs/presales.html) ·
 [how search gets into the Wazuh dashboard](docs/dashboard-options.html)
@@ -127,6 +130,7 @@ the access token from `lab/.secrets/console-owner-token` into the Ask bar (Ctrl+
 | 5 | **Console → Incidents** (`/console/`), open the critical one | "Here's its report: root cause, timeline with evidence, scope, IOCs, proposed actions. Nothing has been changed; a human decides." |
 | 5b | Click **Open case in DFIR-IRIS** (`https://localhost:8444`) | "And this is where the SOC team works the case: timeline by ATT&CK tactic, IOCs, and the proposed actions as tasks waiting for approval." |
 | 6 | Back on Wazuh, press **Ctrl+K**: *"Which processes accessed lsass.exe today, and what started them?"* | "And anyone can just ask. Same read-only tools, answers with evidence, about 4 cents." |
+| 6b | **Console → Response**: approve a self-test action (`socagent respond selftest` beforehand) | "Nothing runs without a human. You approve the exact command, it goes out through Wazuh, and the host reports back through the SIEM. Protected targets like lsass are refused on the host itself." |
 | 7 | **Console → Connect Claude Code** | "Engineers can plug the same tools into Claude Code with one command and investigate from their terminal." |
 | 8 | **Console → How it works** | Recap: the layers, what's AI and what isn't, the guardrails, the costs. |
 
@@ -136,6 +140,10 @@ Short on time? Skip steps 2–4. The incidents and reports from earlier runs are
 
 - **Read-only agents.** The indexer user `soc-agent` can only read alerts and archives (writes return
   403). The tools only search. Containment is only ever proposed.
+- **Human-approved, least-privilege response.** Only the owner can approve. The Wazuh API user can only
+  trigger active response. Host scripts allowlist actions, re-validate targets, refuse protected ones
+  (lsass, sshd, root, Administrator, lab infrastructure), and act reversibly (quarantine, exported tasks,
+  self-releasing isolation). Every decision goes to an audit log and the IRIS task.
 - **Evidence-backed.** Reports and answers cite timestamps, hosts and field values from raw events,
   and say what was *not* checked.
 - **Contained attacks.** Victims sit on an isolated virtual network. Their gateway blocks traffic to
@@ -153,9 +161,8 @@ Short on time? Skip steps 2–4. The incidents and reports from earlier runs are
   escalated as "suspicious". The investigation agent then closed them as benign, at about $0.04–0.10
   each.
 - **Detection gaps remain**: DNS beaconing and clearing bash history are not alerted on yet.
-- **Not built yet:** carrying out approved actions through Wazuh (today approval means closing the
-  IRIS task by hand), sharing beyond localhost (Cloudflare Tunnel or Tailscale), and the automated
-  evaluation harness.
+- **Not built yet:** sharing beyond localhost (Cloudflare Tunnel or Tailscale) and the automated
+  evaluation harness. Credential resets and forensic collection stay manual by design.
 - It is a lab: four machines, one laptop, nothing real at stake.
 
 ## 8. Build it yourself
@@ -179,6 +186,7 @@ uv run --project agent python -m socagent gateway        # https://localhost:844
 uv run --project agent python -m socagent run            # triage new alerts, group into incidents
 uv run --project agent python -m socagent investigate    # investigate new incidents (and file them in DFIR-IRIS)
 uv run --project agent python -m socagent cases          # (re)push investigated incidents to DFIR-IRIS
+uv run --project agent python -m socagent respond list   # proposals awaiting approval (also: approve / reject / done / selftest)
 ./lab/iris/setup-iris.sh                                 # start DFIR-IRIS: https://localhost:8444 (password in lab/.secrets/iris.env)
 uv run --project agent python -m socagent ask "what happened on lin-victim today?"
 uv run --project agent python -m socagent token add alice --cap 1.00   # guest access with a $1/day cap
@@ -188,7 +196,7 @@ uv run --project agent python -m socagent ledger         # AI spend so far
 ### Repository map
 
 ```
-lab/            infrastructure: Hyper-V scripts, cloud-init, Wazuh rules and agent configs, atomics
+lab/            infrastructure: Hyper-V scripts, cloud-init, Wazuh rules, agent configs and active-response scripts, atomics, IRIS
 agent/socagent/ the agentic plane
   poller.py       alerts → bundles            triage.py      triage agent (Haiku 5.5)
   incidents.py    grouping rules (no AI)      investigate.py investigation agent (Sonnet 5.5)
@@ -196,7 +204,7 @@ agent/socagent/ the agentic plane
   tools.py        read-only SOC tools         mcp_server.py  the same tools over MCP
   console.py      SOC console + API           gateway.py     one URL: Wazuh + Ask bar + console + MCP
   access.py       tokens, caps, spend         static/        console page and the Ask bar
-  iris.py         incidents → DFIR-IRIS cases
+  iris.py         incidents → DFIR-IRIS cases     respond.py     approval gate → Wazuh active response
 docs/           phase guides, coverage results, architecture and pre-sales pages
 ```
 

@@ -93,6 +93,19 @@ section[hidden] { display: none; }
 .inc .s { color: var(--muted); font-size: 0.82rem; font-family: var(--mono); }
 .stripe.critical { background: var(--crit); } .stripe.high { background: var(--high); } .stripe.medium { background: var(--med); } .stripe.low { background: var(--muted); }
 .report { margin-top: 16px; }
+.act { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.act.run { border-left-color: var(--accent); } .act.done { border-left-color: var(--ok); }
+.act.bad { border-left-color: var(--crit); } .act.closed { opacity: .75; }
+.act .top { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.act .top b { font-size: 1rem; }
+.act label { font-size: 0.8rem; color: var(--muted); }
+.act input.tgt { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-family: var(--mono); font-size: 0.85rem; }
+.act .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.act .btns button { border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); font-weight: 500; }
+.act .btns .approve { background: var(--accent); color: #fff; border: none; }
+.act .btns .reject:hover { border-color: var(--crit); color: var(--crit); }
+.act pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 0.78rem/1.5 var(--mono); overflow-x: auto; white-space: pre-wrap; }
+.act .res { font-size: 0.88rem; }
 
 .connect { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
 .connect h3 { margin: 0 0 6px; }
@@ -129,6 +142,7 @@ dialog .row .primary { border: none; padding: 8px 16px; }
   <nav role="tablist" aria-label="Views">
     <button role="tab" aria-selected="true" data-view="ask" id="t-ask">Ask</button>
     <button role="tab" aria-selected="false" data-view="incidents" id="t-incidents">Incidents</button>
+    <button role="tab" aria-selected="false" data-view="response" id="t-response">Response</button>
     <button role="tab" aria-selected="false" data-view="connect" id="t-connect">Connect Claude Code</button>
     <button role="tab" aria-selected="false" data-view="about" id="t-about">How it works</button>
   </nav>
@@ -151,6 +165,16 @@ dialog .row .primary { border: none; padding: 8px 16px; }
   <section id="v-incidents" role="tabpanel" aria-labelledby="t-incidents" hidden>
     <div class="incs" id="incs"><p class="empty">Loading incidents…</p></div>
     <div class="card report" id="report" hidden></div>
+  </section>
+
+  <section id="v-response" role="tabpanel" aria-labelledby="t-response" hidden>
+    <div class="card" style="margin-bottom:16px">
+      <b>Approval gate.</b> The investigation agent only <em>proposes</em> actions. Nothing touches a host until
+      you approve the exact command here. It then runs through Wazuh active response with a least-privilege API
+      user, the host reports back through the SIEM, and the decision is written to the DFIR-IRIS task and the audit log.
+      <span class="note" id="respRole"></span>
+    </div>
+    <div id="acts"><p class="empty">Loading…</p></div>
   </section>
 
   <section id="v-connect" role="tabpanel" aria-labelledby="t-connect" hidden>
@@ -267,6 +291,7 @@ function show(view) {
   document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === view)));
   document.querySelectorAll("main section").forEach(s => s.hidden = s.id !== "v-" + view);
   if (view === "incidents") loadIncidents();
+  if (view === "response") loadActions();
   if (location.hash.slice(1) !== view) history.replaceState(null, "", "#" + view);
 }
 
@@ -368,6 +393,52 @@ async function openIncident(id) {
   R.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
+/* ---------- response / approval gate ---------- */
+async function loadActions() {
+  $("#respRole").textContent = me && me.role !== "owner" ? " You can view proposals; only the owner can approve or reject." : "";
+  await api("api/actions/plan", { method: "POST" }).catch(() => {});
+  const acts = await (await api("api/actions")).json();
+  const order = { proposed: 0, sent: 1 };
+  acts.sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2) || (a.created < b.created ? 1 : -1));
+  if (!acts.length) { $("#acts").innerHTML = `<p class="empty">No proposed actions. Investigated true-positive incidents add them here.</p>`; return; }
+  $("#acts").innerHTML = acts.map(a => {
+    const open = a.status === "proposed", owner = me && me.role === "owner";
+    const cls = ["act", a.executable && open ? "run" : "", a.status === "done" || a.status === "manual_done" ? "done" : "",
+      ["refused", "failed", "dispatch_failed"].includes(a.status) ? "bad" : "", open ? "" : "closed"].join(" ");
+    const res = a.result ? `<div class="res"><b>Host reported:</b> ${esc(a.result.status || "")} · ${esc(a.result.detail || "")}${a.result.seconds ? ` <span class="note">(${a.result.seconds}s after dispatch)</span>` : ""}</div>` : "";
+    const dec = a.decided_by ? `<div class="note">${esc(a.status)} by ${esc(a.decided_by)} at ${esc(a.decided_at)}${a.note ? " · " + esc(a.note) : ""}</div>` : "";
+    const run = a.executable && open && owner ? `
+      <label for="t-${a.id}">Exact target (edit if needed, checked again on the host)</label>
+      <input class="tgt" id="t-${a.id}" value="${esc(a.target)}">
+      <details><summary class="note">Wazuh API call that will be sent</summary><pre>${esc(JSON.stringify(a.preview, null, 1))}</pre></details>
+      <div class="btns"><button class="approve" data-act="${a.id}" data-verb="approve">Approve &amp; run</button>
+        <button class="reject" data-act="${a.id}" data-verb="reject">Reject</button></div>` : "";
+    const manual = !a.executable && open && owner ? `<div class="btns"><button data-act="${a.id}" data-verb="done">Mark done (manually)</button>
+        <button class="reject" data-act="${a.id}" data-verb="reject">Reject</button></div>` : "";
+    return `<div class="${cls}" id="${a.id}">
+      <div class="top"><b>${esc(a.describe)}</b><span class="pill ${a.executable ? "muted" : "medium"}">${a.executable ? "automatable" : "manual"}</span>
+        <span class="pill muted">${esc(a.status)}</span><span class="pill muted">${esc(a.urgency)}</span>
+        <span class="note">${esc(a.incident_id)} · ${esc(a.host)}${a.iris_case_id ? " · IRIS #" + esc(a.iris_case_id) : ""} · ${esc(a.id)}</span></div>
+      <div>${esc(a.reason)}</div>
+      ${!a.executable ? `<div class="note">Proposed: <code>${esc(a.proposed.action)}</code> ${esc(a.proposed.target)}</div>` : (!open ? `<div class="note"><code>${esc(a.action)}</code> ${esc(a.target)}</div>` : "")}
+      ${run}${manual}${res}${dec}</div>`;
+  }).join("");
+  document.querySelectorAll("#acts [data-verb]").forEach(b => b.addEventListener("click", () => decide(b.dataset.act, b.dataset.verb)));
+}
+async function decide(id, verb) {
+  const card = document.getElementById(id), body = {};
+  if (verb === "approve") body.target = card.querySelector(".tgt").value.trim();   // the exact target the human approved
+  if (verb === "reject") body.reason = "rejected in console";
+  if (verb === "done") body.note = "done manually (console)";
+  card.querySelectorAll("button").forEach(b => b.disabled = true);
+  const st = document.createElement("div"); st.className = "note";
+  st.textContent = verb === "approve" ? "Sent to the host; waiting for it to report back through the SIEM (up to 90 s)…" : "Saving…";
+  card.appendChild(st);
+  const r = await api(`api/actions/${encodeURIComponent(id)}/${verb}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); st.className = "error"; st.textContent = j.detail || r.statusText; card.querySelectorAll("button").forEach(b => b.disabled = false); return; }
+  loadActions();
+}
+
 /* ---------- copy, key, login ---------- */
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-copy], #copyMcp"); if (!b) return;
@@ -382,7 +453,7 @@ function showLogin(msg) { $("#loginErr").textContent = msg || ""; if (!$("#login
 $("#loginForm").addEventListener("submit", () => { token = $("#tok").value.trim(); shared.set("tsoc-token", token); refreshHeader(); });
 
 if (!token) showLogin(); else refreshHeader();
-show(["ask", "incidents", "connect", "about"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ask");
+show(["ask", "incidents", "response", "connect", "about"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ask");
 </script>
 </body>
 </html>

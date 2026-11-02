@@ -109,3 +109,19 @@
     <mitre><id>T1070.001</id></mitre>
   </rule>
 </group>
+
+<!-- ===== Approval-gated response: results of tsoc-ar on the agents (ids 1005xx) ===== -->
+<group name="active_response,tiny_agenticsoc,">
+  <!-- Deliberately below the triage threshold (7): the AI must not triage its own approved actions. -->
+  <rule id="100500" level="5">
+    <if_sid>650</if_sid>
+    <field name="parameters.program">^tsoc-ar$</field>
+    <field name="command">^result$</field>
+    <description>Approved response $(parameters.action) on $(parameters.target): $(parameters.status)</description>
+  </rule>
+  <rule id="100501" level="6">
+    <if_sid>100500</if_sid>
+    <field name="parameters.status">^failed$|^refused$|^aborted$</field>
+    <description>Approved response $(parameters.action) did not complete: $(parameters.status) - $(parameters.detail)</description>
+  </rule>
+</group>

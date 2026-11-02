@@ -204,7 +204,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
   <g class="node st-live" data-id="triage" tabindex="0" role="button" aria-label="Triage agent"><rect x="560" y="520" width="150" height="66" rx="6"/><circle class="dot" cx="698" cy="532" r="4"/><text class="t" x="635" y="548" text-anchor="middle">Triage agent</text><text class="s" x="635" y="566" text-anchor="middle">small, cheap model</text></g>
   <g class="node st-live" data-id="invest" tabindex="0" role="button" aria-label="Investigation agent"><rect x="330" y="520" width="170" height="66" rx="6"/><circle class="dot" cx="488" cy="532" r="4"/><text class="t" x="415" y="548" text-anchor="middle">Investigation agent</text><text class="s" x="415" y="566" text-anchor="middle">tool-use loop</text></g>
   <g class="node st-live" data-id="iris" tabindex="0" role="button" aria-label="DFIR-IRIS"><rect x="110" y="520" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="532" r="4"/><text class="t" x="190" y="548" text-anchor="middle">DFIR-IRIS</text><text class="s" x="190" y="566" text-anchor="middle">case · timeline · IOCs</text></g>
-  <g class="node st-planned" data-id="approval" tabindex="0" role="button" aria-label="Human approval"><rect x="110" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="662" r="4"/><text class="t" x="190" y="678" text-anchor="middle">You approve</text><text class="s" x="190" y="696" text-anchor="middle">human in the loop</text></g>
+  <g class="node st-live" data-id="approval" tabindex="0" role="button" aria-label="Human approval"><rect x="110" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="258" cy="662" r="4"/><text class="t" x="190" y="678" text-anchor="middle">You approve</text><text class="s" x="190" y="696" text-anchor="middle">human in the loop</text></g>
   <g class="node st-live" data-id="openrouter" tabindex="0" role="button" aria-label="Anthropic API and OpenRouter"><rect x="330" y="650" width="380" height="66" rx="6"/><circle class="dot" cx="698" cy="662" r="4"/><text class="t" x="520" y="678" text-anchor="middle">Anthropic API · OpenRouter</text><text class="s" x="520" y="696" text-anchor="middle">Haiku 5.5 triage · Sonnet 5.5 investigation</text></g>
   <g class="node st-live" data-id="tools" tabindex="0" role="button" aria-label="SOC tools MCP server"><rect x="770" y="650" width="180" height="66" rx="6"/><circle class="dot" cx="938" cy="662" r="4"/><text class="t" x="860" y="678" text-anchor="middle">SOC tools (MCP)</text><text class="s" x="860" y="696" text-anchor="middle">search · pivot · enrich</text></g>
   <g class="node st-live" data-id="claude" tabindex="0" role="button" aria-label="Claude Code"><rect x="1010" y="650" width="160" height="66" rx="6"/><circle class="dot" cx="1158" cy="662" r="4"/><text class="t" x="1090" y="678" text-anchor="middle">Claude Code</text><text class="s" x="1090" y="696" text-anchor="middle">ad-hoc hunting</text></g>
@@ -254,7 +254,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
         <tr><td>Give agents and Claude Code the same SOC tools</td><td>MCP server</td><td class="num">this repo</td><td>WSL2</td><td><span class="pill planned">phase 3</span></td></tr>
         <tr><td>Route each task to a suitable model</td><td>OpenRouter</td><td class="num">paid API</td><td>cloud</td><td><span class="pill planned">phase 3</span></td></tr>
         <tr><td>Record</td><td>Cases, timelines, IOCs, analyst notes</td><td>DFIR-IRIS</td><td class="num">LGPL-3.0</td><td>WSL2 (Docker)</td><td><span class="pill live">live</span></td></tr>
-        <tr><td>Act</td><td>Isolate host, kill process, block IP, after approval</td><td>Wazuh active response</td><td class="num">GPL-2.0</td><td>manager → agents</td><td><span class="pill planned">phase 3</span></td></tr>
+        <tr><td>Act</td><td>Isolate host, kill process, block IP, after approval</td><td>Wazuh active response</td><td class="num">GPL-2.0</td><td>manager → agents</td><td><span class="pill live">live</span></td></tr>
         <tr><td>Measure</td><td>Did we detect it, judge it right, and at what cost?</td><td>Eval harness</td><td class="num">this repo</td><td>WSL2</td><td><span class="pill planned">phase 4</span></td></tr>
       </tbody>
     </table>
@@ -409,13 +409,13 @@ const NODES = {
     inputs: "Investigated incidents via the IRIS API: case, assets, IOCs, timeline by ATT&CK tactic, report notes",
     outputs: "A case per incident; each proposed action is a task awaiting approval; benign cases closed automatically",
     repo: "agent/socagent/iris.py · lab/iris/setup-iris.sh" },
-  approval: { name: "Human approval", status: "planned", phase: "Phase 3",
+  approval: { name: "Human approval", status: "live", phase: "Phase 3, verified",
     role: "You. Nothing touches the lab hosts without an explicit yes.",
-    tools: [["CLI prompt or IRIS task", "this repo"]],
+    tools: [["Console Response tab / socagent respond (owner only)", "this repo"], ["Wazuh active response + tsoc-ar host scripts", "GPL-2.0 / this repo"]],
     runs: "Your terminal",
     inputs: "Proposed action with evidence",
-    outputs: "Approved call to the Wazuh API to trigger active response",
-    repo: "agent/ (planned)" },
+    outputs: "Approved, validated call to the Wazuh API (least-privilege user); the host verifies, acts reversibly and reports back; the IRIS task and audit log record it",
+    repo: "agent/socagent/respond.py · lab/wazuh/active-response/" },
   claude: { name: "Claude Code", status: "live", phase: "Phase 3, verified",
     role: "Interactive threat hunting. Connects to the same MCP tools so you can ask questions in plain language.",
     tools: [["Claude Code", "Anthropic, not OSS"]],

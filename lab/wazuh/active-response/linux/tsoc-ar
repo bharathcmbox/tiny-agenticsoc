@@ -1,0 +1,161 @@
+#!/usr/bin/python3
+"""tiny-agenticsoc active response for Linux agents (Wazuh execd custom script).
+
+Invoked only by a human-approved request through the Wazuh API:
+    PUT /active-response {"command": "!tsoc-ar", "arguments": [action_id, action, target, ...]}
+Protocol (wazuh-execd 4.x): read one JSON line on stdin, answer check_keys, wait for continue/abort.
+Every action is allowlisted, validated, refuses protected targets, and is reversible where it can be
+(files are quarantined, not deleted; isolation releases itself). The result is logged as one JSON line
+in active-responses.log, which Wazuh decodes and the SOC verifies.
+Install: /var/ossec/active-response/bin/tsoc-ar  root:wazuh 0750
+"""
+import hashlib, ipaddress, json, os, re, shutil, subprocess, sys, time
+
+LOG = "/var/ossec/logs/active-responses.log"
+QUAR = "/var/ossec/quarantine"
+LAB_INFRA = {"10.10.10.1", "10.10.10.10", "10.10.10.254"}      # gateway, SIEM, admin workstation
+PROTECTED_PROCS = {"systemd", "init", "sshd", "auditd", "systemd-journald", "dbus-daemon", "wazuh-agentd",
+                   "wazuh-execd", "wazuh-logcollector", "wazuh-modulesd", "wazuh-syscheckd", "python3"}
+PROTECTED_USERS = {"root", "soc", "wazuh"}
+PROTECTED_PATHS = ("/proc", "/sys", "/dev", "/boot", "/var/ossec", "/usr/bin", "/usr/sbin", "/bin", "/sbin",
+                   "/lib", "/usr/lib", "/etc/passwd", "/etc/shadow", "/etc/sudoers")
+PERSIST_DIRS = ("/etc/cron.d/", "/etc/cron.hourly/", "/etc/cron.daily/", "/etc/cron.weekly/", "/etc/cron.monthly/",
+                "/var/spool/cron/crontabs/", "/etc/systemd/system/")
+
+
+def log(entry: dict) -> None:
+    line = json.dumps({"version": 1, "origin": {"name": "tsoc-ar", "module": "active-response"}, "command": "result",
+                       "parameters": {"program": "tsoc-ar", **entry}}, separators=(",", ":"))
+    with open(LOG, "a") as f:
+        f.write(f"{time.strftime('%Y/%m/%d %H:%M:%S')} active-response/bin/tsoc-ar: {line}\n")
+
+
+def run(cmd: list[str]) -> str:
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    if p.returncode != 0:
+        raise RuntimeError(f"{' '.join(cmd)} -> {p.returncode}: {p.stderr.strip()[:200]}")
+    return p.stdout
+
+
+def quarantine(path: str) -> str:
+    os.makedirs(QUAR, mode=0o700, exist_ok=True)
+    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    dest = os.path.join(QUAR, time.strftime("%Y%m%dT%H%M%S_") + path.strip("/").replace("/", "__"))
+    shutil.move(path, dest)
+    os.chmod(dest, 0o000)
+    return f"moved to {dest} (sha256 {digest})"
+
+
+def kill_process(target: str) -> str:
+    if target.isdigit():
+        pid = int(target)
+        name = open(f"/proc/{pid}/comm").read().strip()
+        if name in PROTECTED_PROCS or pid < 2:
+            raise PermissionError(f"refusing to kill protected process {name} ({pid})")
+        os.kill(pid, 9)
+        return f"killed pid {pid} ({name})"
+    if not re.fullmatch(r"[\w.+-]{1,64}", target) or target in PROTECTED_PROCS:
+        raise PermissionError(f"refusing process name {target!r}")
+    out = subprocess.run(["pkill", "-KILL", "-x", "-e", target], capture_output=True, text=True)
+    n = len([l for l in out.stdout.splitlines() if "killed" in l])
+    return f"killed {n} process(es) named {target}"
+
+
+def quarantine_file(target: str) -> str:
+    path = os.path.realpath(target)
+    if not os.path.isabs(target) or path.startswith(PROTECTED_PATHS) or not os.path.isfile(path):
+        raise PermissionError(f"refusing to quarantine {target!r} (not a regular file outside system paths)")
+    return quarantine(path)
+
+
+def remove_persistence(target: str) -> str:
+    path = os.path.realpath(target)
+    if not path.startswith(PERSIST_DIRS) or not os.path.isfile(path):
+        raise PermissionError(f"{target!r} is not a cron file or systemd unit in a known persistence location")
+    if path.startswith("/etc/systemd/system/"):
+        subprocess.run(["systemctl", "disable", "--now", os.path.basename(path)], capture_output=True)
+    return quarantine(path)
+
+
+def disable_account(target: str) -> str:
+    if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", target) or target in PROTECTED_USERS:
+        raise PermissionError(f"refusing to disable account {target!r}")
+    run(["usermod", "--lock", "--expiredate", "1", target])
+    subprocess.run(["pkill", "-KILL", "-u", target], capture_output=True)
+    return f"locked and expired {target}, killed its sessions"
+
+
+def block_ip(target: str) -> str:
+    ip = str(ipaddress.ip_address(target))
+    if ip in LAB_INFRA:
+        raise PermissionError(f"refusing to block lab infrastructure {ip}")
+    run(["nft", "add", "table", "inet", "tsoc_block"])
+    for chain, hook, field in (("in", "input", "saddr"), ("out", "output", "daddr")):
+        subprocess.run(["nft", "add", "chain", "inet", "tsoc_block", chain, f"{{ type filter hook {hook} priority -10; }}"],
+                       capture_output=True)
+        run(["nft", "add", "rule", "inet", "tsoc_block", chain, "ip", field, ip, "drop"])
+    return f"blocked {ip} in and out (nft table inet tsoc_block)"
+
+
+def isolate_host(target: str) -> str:
+    minutes = int(target or 30)
+    if not 1 <= minutes <= 240:
+        raise ValueError("isolation minutes must be 1-240")
+    rules = f"""table inet tsoc_isolate {{
+  chain in  {{ type filter hook input  priority -20; policy drop;
+    iif lo accept; ct state established,related accept
+    ip saddr {{ 10.10.10.10, 10.10.10.254 }} accept }}
+  chain out {{ type filter hook output priority -20; policy drop;
+    oif lo accept; ct state established,related accept
+    ip daddr {{ 10.10.10.10, 10.10.10.254 }} accept }}
+}}"""
+    subprocess.run(["nft", "delete", "table", "inet", "tsoc_isolate"], capture_output=True)
+    p = subprocess.run(["nft", "-f", "-"], input=rules, capture_output=True, text=True)
+    if p.returncode:
+        raise RuntimeError(p.stderr.strip()[:200])
+    subprocess.run(["systemd-run", f"--on-active={minutes}m", "--unit", f"tsoc-release-{int(time.time())}",
+                    "/usr/sbin/nft", "delete", "table", "inet", "tsoc_isolate"], capture_output=True)
+    return f"isolated: only the SIEM (10.10.10.10) and admin workstation (10.10.10.254) can talk to this host; auto-release in {minutes} min"
+
+
+def release_host(target: str) -> str:
+    out = []
+    for t in ("tsoc_isolate", "tsoc_block"):
+        if subprocess.run(["nft", "delete", "table", "inet", t], capture_output=True).returncode == 0:
+            out.append(t)
+    return f"removed {', '.join(out) or 'nothing (not isolated or blocked)'}"
+
+
+ACTIONS = {"kill_process": kill_process, "quarantine_file": quarantine_file, "remove_persistence": remove_persistence,
+           "disable_account": disable_account, "block_ip": block_ip, "isolate_host": isolate_host,
+           "release_host": release_host}
+
+
+def main() -> None:
+    msg = json.loads(sys.stdin.readline())
+    args = msg.get("parameters", {}).get("extra_args") or []
+    action_id, action, target = (args + ["", "", ""])[:3]
+    if msg.get("command") != "add":
+        return
+    # check_keys handshake: execd answers continue/abort (always continue for API-triggered commands)
+    sys.stdout.write(json.dumps({"version": 1, "origin": {"name": "tsoc-ar", "module": "active-response"},
+                                 "command": "check_keys", "parameters": {"keys": [action_id]}}) + "\n")
+    sys.stdout.flush()
+    reply = json.loads(sys.stdin.readline() or "{}")
+    if reply.get("command") != "continue":
+        log({"action_id": action_id, "action": action, "target": target, "status": "aborted", "detail": "execd abort"})
+        return
+    fn = ACTIONS.get(action)
+    try:
+        if not re.fullmatch(r"act-[a-f0-9]{12}", action_id) or fn is None:
+            raise PermissionError(f"unknown action {action!r} or bad action id")
+        detail, status = fn(target), "done"
+    except PermissionError as e:
+        detail, status = str(e), "refused"
+    except Exception as e:  # noqa: BLE001 - report every failure to the SOC
+        detail, status = f"{type(e).__name__}: {e}", "failed"
+    log({"action_id": action_id, "action": action, "target": target, "status": status, "detail": detail})
+
+
+if __name__ == "__main__":
+    main()

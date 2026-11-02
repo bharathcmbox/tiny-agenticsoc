@@ -15,6 +15,7 @@ from pathlib import Path
 import anthropic
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from . import access
 from .ask import ask
@@ -29,6 +30,7 @@ S = Settings.load()
 _ix: Indexer | None = None
 _ix_lock = threading.Lock()
 _status_cache: tuple[float, dict] = (0.0, {})
+_decide_lock = threading.Lock()
 
 
 def tools() -> SocTools:
@@ -188,6 +190,82 @@ async def api_ask(request: Request, authorization: str | None = Header(None),
                 break
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ approval gate (owner only)
+def owner(authorization: str | None) -> access.Principal:
+    p = principal(authorization)
+    if p.role != "owner":
+        raise HTTPException(403, "only the owner can approve or reject response actions")
+    return p
+
+
+@app.get("/api/actions")
+def actions_list(authorization: str | None = Header(None)):
+    from . import respond as R
+    principal(authorization)
+    out = []
+    for a in R.load():
+        d = R.asdict(a)
+        d["describe"] = R.DESCRIBE.get(a.action, "Manual action: done outside the platform")
+        if a.executable and a.status == "proposed":
+            d["preview"] = {"method": "PUT", "path": "/active-response?agents_list=<agent of " + a.host + ">",
+                            "body": {"command": "!tsoc-ar.cmd" if a.host.startswith("win") else "!tsoc-ar",
+                                     "arguments": [a.id, a.action, a.target]}}
+        out.append(d)
+    return out
+
+
+@app.post("/api/actions/plan")
+def actions_plan(authorization: str | None = Header(None)):
+    from . import incidents as I
+    from . import respond as R
+    owner(authorization)
+    acts = R.plan(I.load(), RESULTS / "investigations")
+    return {"proposed": sum(a.status == "proposed" for a in acts)}
+
+
+def _iris():
+    try:
+        from .iris import Iris
+        return Iris()
+    except SystemExit:
+        return None
+
+
+@app.post("/api/actions/{act_id}/{verb}")
+async def actions_decide(act_id: str, verb: str, request: Request, authorization: str | None = Header(None)):
+    from . import respond as R
+    p = owner(authorization)
+    if verb not in ("approve", "reject", "done"):
+        raise HTTPException(404, "unknown decision")
+    body = await request.json() if (await request.body()) else {}
+    acts = R.load()
+    a = next((x for x in acts if x.id == act_id), None)
+    if not a:
+        raise HTTPException(404, "unknown action")
+    who = f"{p.name} (console)"
+
+    def decide():  # blocking (Wazuh API + up to 90 s of verification): run off the event loop
+      with _decide_lock:  # one decision at a time: actions.json is load-modify-save
+        try:
+            fresh = R.load()                  # re-read under the lock
+            x = next(y for y in fresh if y.id == act_id)
+            if verb == "approve":
+                # the human typed/confirmed the exact target; validated here and again on the host
+                _, follow = R.execute(x, who, body.get("target"), ix=tools().ix, iris=_iris())
+                if follow:
+                    fresh.append(follow)
+            elif verb == "reject":
+                R.reject(x, who, (body.get("reason") or "rejected")[:300], iris=_iris())
+            else:
+                R.manual_done(x, who, (body.get("note") or "done manually")[:300], iris=_iris())
+            R.save(fresh)
+            return R.asdict(x)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    return await run_in_threadpool(decide)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8800) -> None:

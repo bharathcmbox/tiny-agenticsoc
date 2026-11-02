@@ -216,6 +216,49 @@ def cmd_cases(a, s: Settings):
               f"[{(inv.get('report') or {}).get('verdict', inv.get('status'))}]  {iris.case_url(cid)}")
 
 
+def cmd_respond(a, s: Settings):
+    """Approval gate: plan | list | approve ID [--target T] | reject ID --reason R | done ID --note N"""
+    from . import incidents as I
+    from . import respond as R
+    if a.action == "selftest":
+        for host in ([a.id] if a.id else ["lin-victim", "win-victim"]):
+            R.selftest(host)
+            print(f"{host}: test artifacts created, 8 test actions proposed (2 must be refused by the host)")
+        print("Approve them in the console (Response tab) or: socagent respond approve <id>")
+        a.action = "list"
+    if a.action == "plan":
+        acts = R.plan(I.load(), RESULTS / "investigations")
+        print(f"{sum(x.status == 'proposed' for x in acts)} proposed action(s) awaiting a decision")
+        a.action = "list"
+    acts = R.load()
+    if a.action == "list":
+        for x in acts:
+            if a.all or x.status == "proposed":
+                kind = "RUN " if x.executable else "MANUAL"
+                print(f"{x.id} [{x.status:12s}] {kind} {x.incident_id} {x.host:10s} {x.action:18s} {x.target[:60]!r}"
+                      f"{'  -> ' + str((x.result or {}).get('detail', ''))[:80] if x.result else ''}")
+        return
+    x = next((y for y in acts if y.id == a.id), None)
+    if not x:
+        sys.exit(f"unknown action {a.id}")
+    try:
+        from .iris import Iris
+        iris = Iris()
+    except SystemExit:
+        iris = None
+    if a.action == "approve":
+        with Indexer(s) as ix:
+            x2, follow = R.execute(x, "owner (cli)", a.target, ix=ix, iris=iris)
+        if follow:
+            acts.append(follow)
+    elif a.action == "reject":
+        R.reject(x, "owner (cli)", a.reason or "rejected", iris=iris)
+    elif a.action == "done":
+        R.manual_done(x, "owner (cli)", a.note or "done manually", iris=iris)
+    R.save(acts)
+    print(f"{x.id}: {x.status}  {json.dumps(x.result) if x.result else ''}")
+
+
 def cmd_gateway(a, s: Settings):
     from .gateway import serve
     serve(a.host, a.port)
@@ -260,6 +303,9 @@ def main():
     q.add_argument("question", nargs="+"); q.add_argument("--effort", default="low", choices=["low", "medium", "high"])
     c = sub.add_parser("console", help="SOC console + HTTP MCP endpoint (localhost only by default)")
     c.add_argument("--host", default="127.0.0.1"); c.add_argument("--port", type=int, default=8800)
+    rp = sub.add_parser("respond", help="approval gate for proposed response actions")
+    rp.add_argument("action", choices=["plan", "list", "approve", "reject", "done", "selftest"]); rp.add_argument("id", nargs="?")
+    rp.add_argument("--target"); rp.add_argument("--reason"); rp.add_argument("--note"); rp.add_argument("--all", action="store_true")
     cs = sub.add_parser("cases", help="push investigated incidents into DFIR-IRIS as cases")
     cs.add_argument("id", nargs="*")
     g = sub.add_parser("gateway", help="one HTTPS address: Wazuh dashboard + Ask bar, /console, /mcp")
@@ -272,7 +318,7 @@ def main():
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway, "cases": cmd_cases}[a.cmd](a, s)
+     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway, "cases": cmd_cases, "respond": cmd_respond}[a.cmd](a, s)
 
 
 if __name__ == "__main__":
