@@ -14,5 +14,10 @@ Hands-on agentic SOC home lab. See README.md for architecture and phase status.
 - Lab access: `ssh -i ~/.ssh/tiny-soc_ed25519 soc@<ip>`. Lab subnet 10.10.10.0/24, gateway .1, Wazuh .10.
 - Never commit secrets. `lab/.secrets/` and `.env` are git-ignored.
 - Atomic Red Team runs only inside lab VMs, never on the host or in WSL.
-- LLM calls go through OpenRouter (OpenAI-compatible API). Keep the model choice configurable and
-  record cost per alert.
+- The agents call the Anthropic API directly (`agent/socagent/llm.py`, `anthropic:`/`claude-*`
+  model strings). Keep the model choice configurable (`TRIAGE_MODEL`, `INVESTIGATE_MODEL`,
+  `ASK_MODEL`) and record cost per alert.
+
+## Tests
+- Agent tests live in `agent/tests/`. Run them with `cd agent && uv run pytest` (pytest is a
+  uv dev dependency of the `agent/` project).
