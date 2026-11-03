@@ -1,0 +1,25 @@
+# CI for tiny-agenticsoc. Axiom reads this run's conclusion as the CI gate for agent PRs
+# (Axiom ADR-010). Agents cannot change this file: their GitHub token has no Workflows permission.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Agent tests
+        working-directory: agent
+        # --with pytest works whether or not pytest is a declared dev dependency yet.
+        run: uv run --with pytest pytest -q
