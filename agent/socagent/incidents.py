@@ -154,8 +154,8 @@ def investigation_queue(incs: list[Incident], min_severity: str = "high") -> lis
     """New incidents worth investigating now: severity at or above min_severity, most severe
     first, oldest first within a severity."""
     floor = SEVERITY_ORDER[min_severity]
-    todo = [i for i in incs if i.status == "new" and SEVERITY_ORDER[i.severity] > floor]
-    return sorted(todo, key=lambda i: (-SEVERITY_ORDER[i.severity], i.first))
+    todo = [i for i in incs if i.status == "new" and SEVERITY_ORDER[i.severity] >= floor]
+    return sorted(todo, key=lambda i: (-SEVERITY_ORDER[i.severity], _ts(i.first)))
 
 
 def _new_id(first: str, taken: list[Incident]) -> str:
