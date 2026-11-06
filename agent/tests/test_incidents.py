@@ -112,5 +112,48 @@ class InvestigationQueue(unittest.TestCase):
         self.assertEqual([i.id for i in queue], ["early", "late"])
 
 
+class SeverityCounts(unittest.TestCase):
+    def inc(self, id, severity):
+        return I.Incident(id=id, status="new", severity=severity, title=id, hosts=["win-victim"],
+                          first=D + "10:00:00+0000", last=D + "10:00:00+0000", verdicts={}, techniques=[],
+                          max_level=10, bundle_keys=[id])
+
+    def test_counts_each_severity(self):
+        incs = [self.inc("a", "critical"), self.inc("b", "high"), self.inc("c", "high"), self.inc("d", "low")]
+        self.assertEqual(I.severity_counts(incs), {"critical": 1, "high": 2, "medium": 0, "low": 1})
+
+    def test_empty_input_is_all_zeros(self):
+        self.assertEqual(I.severity_counts([]), {"critical": 0, "high": 0, "medium": 0, "low": 0})
+
+    def test_unused_severities_are_present_as_zero(self):
+        counts = I.severity_counts([self.inc("a", "medium")])
+        self.assertEqual(set(counts), set(I.SEVERITY_ORDER))
+        self.assertEqual(counts["medium"], 1)
+        self.assertEqual([counts[s] for s in ("critical", "high", "low")], [0, 0, 0])
+
+    def test_total_matches_number_of_incidents(self):
+        incs = [self.inc(str(n), s) for n, s in enumerate(["low", "low", "critical", "medium", "high", "low"])]
+        self.assertEqual(sum(I.severity_counts(incs).values()), len(incs))
+        self.assertEqual(I.severity_counts(incs)["low"], 3)
+
+    def test_keys_are_ordered_most_severe_first(self):
+        self.assertEqual(list(I.severity_counts([])), ["critical", "high", "medium", "low"])
+
+    def test_status_is_ignored_unlike_the_queue(self):
+        incs = [self.inc("a", "critical"), self.inc("b", "critical")]
+        incs[0].status = "closed"
+        self.assertEqual(I.severity_counts(incs)["critical"], 2)
+
+    def test_unknown_severity_is_kept_not_dropped(self):
+        counts = I.severity_counts([self.inc("a", "informational"), self.inc("b", "high")])
+        self.assertEqual(counts["informational"], 1)
+        self.assertEqual(sum(counts.values()), 2)
+
+    def test_counts_incidents_built_by_group(self):
+        rows = [t("win-victim", "1", D + "10:00:00+0000", techs=["T1003.001"]),   # critical
+                t("lin-victim", "2", D + "11:00:00+0000", techs=["T1053.005"])]   # high
+        self.assertEqual(I.severity_counts(I.group(rows, [])), {"critical": 1, "high": 1, "medium": 0, "low": 0})
+
+
 if __name__ == "__main__":
     unittest.main()

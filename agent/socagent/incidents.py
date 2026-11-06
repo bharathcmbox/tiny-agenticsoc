@@ -168,6 +168,19 @@ def investigation_queue(incs: list[Incident], min_severity: str = "high") -> lis
     return sorted(todo, key=lambda i: (-SEVERITY_ORDER[i.severity], _ts(i.first)))
 
 
+def severity_counts(incs: list[Incident]) -> dict[str, int]:
+    """How many of `incs` sit at each severity.
+
+    Every known severity is present, so callers can index without guarding, and the keys come out
+    most severe first to match how queues and dashboards read. Unknown severities (e.g. from an
+    older incidents.json) are kept and appended after the known ones rather than dropped.
+    """
+    counts = {s: 0 for s in sorted(SEVERITY_ORDER, key=SEVERITY_ORDER.get, reverse=True)}
+    for i in incs:
+        counts[i.severity] = counts.get(i.severity, 0) + 1
+    return counts
+
+
 def _new_id(first: str, taken: list[Incident]) -> str:
     day = _ts(first).strftime("%Y%m%d")
     nums = [int(i.id.rsplit("-", 1)[1]) for i in taken if i.id.startswith(f"INC-{day}-")]
