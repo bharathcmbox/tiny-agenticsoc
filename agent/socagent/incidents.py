@@ -150,6 +150,14 @@ def group(triaged: list[dict], existing: list[Incident]) -> list[Incident]:
     return out
 
 
+def investigation_queue(incs: list[Incident], min_severity: str = "high") -> list[Incident]:
+    """New incidents worth investigating now: severity at or above min_severity, most severe
+    first, oldest first within a severity."""
+    floor = SEVERITY_ORDER[min_severity]
+    todo = [i for i in incs if i.status == "new" and SEVERITY_ORDER[i.severity] > floor]
+    return sorted(todo, key=lambda i: (-SEVERITY_ORDER[i.severity], i.first))
+
+
 def _new_id(first: str, taken: list[Incident]) -> str:
     day = _ts(first).strftime("%Y%m%d")
     nums = [int(i.id.rsplit("-", 1)[1]) for i in taken if i.id.startswith(f"INC-{day}-")]

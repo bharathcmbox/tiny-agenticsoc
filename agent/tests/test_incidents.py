@@ -73,5 +73,24 @@ class Grouping(unittest.TestCase):
         self.assertEqual(len({i.id for i in again}), 2)
 
 
+class InvestigationQueue(unittest.TestCase):
+    def inc(self, id, severity, first, status="new"):
+        return I.Incident(id=id, status=status, severity=severity, title=id, hosts=["win-victim"], first=D + first,
+                          last=D + first, verdicts={}, techniques=[], max_level=10, bundle_keys=[id])
+
+    def test_low_severity_is_left_out(self):
+        queue = I.investigation_queue([self.inc("a", "critical", "10:00:00+0000"), self.inc("b", "medium", "09:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["a"])
+
+    def test_only_new_incidents(self):
+        queue = I.investigation_queue([self.inc("a", "critical", "10:00:00+0000", status="investigated"),
+                                       self.inc("b", "critical", "11:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["b"])
+
+    def test_oldest_first_within_a_severity(self):
+        queue = I.investigation_queue([self.inc("late", "critical", "11:00:00+0000"), self.inc("early", "critical", "09:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["early", "late"])
+
+
 if __name__ == "__main__":
     unittest.main()
