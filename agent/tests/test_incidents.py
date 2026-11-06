@@ -73,5 +73,44 @@ class Grouping(unittest.TestCase):
         self.assertEqual(len({i.id for i in again}), 2)
 
 
+class InvestigationQueue(unittest.TestCase):
+    def inc(self, id, severity, first, status="new"):
+        return I.Incident(id=id, status=status, severity=severity, title=id, hosts=["win-victim"], first=D + first,
+                          last=D + first, verdicts={}, techniques=[], max_level=10, bundle_keys=[id])
+
+    def test_low_severity_is_left_out(self):
+        queue = I.investigation_queue([self.inc("a", "critical", "10:00:00+0000"), self.inc("b", "medium", "09:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["a"])
+
+    def test_default_includes_high_and_excludes_medium(self):
+        queue = I.investigation_queue([self.inc("h", "high", "10:00:00+0000"), self.inc("m", "medium", "09:00:00+0000"),
+                                       self.inc("l", "low", "08:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["h"])
+
+    def test_explicit_min_severity_is_inclusive(self):
+        queue = I.investigation_queue([self.inc("m", "medium", "10:00:00+0000"), self.inc("l", "low", "09:00:00+0000")],
+                                      min_severity="medium")
+        self.assertEqual([i.id for i in queue], ["m"])
+
+    def test_most_severe_first_across_severities(self):
+        queue = I.investigation_queue([self.inc("h", "high", "08:00:00+0000"), self.inc("c", "critical", "11:00:00+0000"),
+                                       self.inc("m", "medium", "07:00:00+0000")], min_severity="medium")
+        self.assertEqual([i.id for i in queue], ["c", "h", "m"])
+
+    def test_oldest_first_compares_times_not_strings(self):
+        # 10:30+01:00 is 09:30 UTC, earlier than 10:00+0000, though it sorts later as a string
+        queue = I.investigation_queue([self.inc("b", "high", "10:00:00+0000"), self.inc("a", "high", "10:30:00+01:00")])
+        self.assertEqual([i.id for i in queue], ["a", "b"])
+
+    def test_only_new_incidents(self):
+        queue = I.investigation_queue([self.inc("a", "critical", "10:00:00+0000", status="investigated"),
+                                       self.inc("b", "critical", "11:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["b"])
+
+    def test_oldest_first_within_a_severity(self):
+        queue = I.investigation_queue([self.inc("late", "critical", "11:00:00+0000"), self.inc("early", "critical", "09:00:00+0000")])
+        self.assertEqual([i.id for i in queue], ["early", "late"])
+
+
 if __name__ == "__main__":
     unittest.main()
