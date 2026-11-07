@@ -150,6 +150,14 @@ def group(triaged: list[dict], existing: list[Incident]) -> list[Incident]:
     return out
 
 
+def severity_rank[S = str](severity: S) -> int:
+    """How serious a severity is. Unknown ones rank lowest."""
+    try:
+        return SEVERITY_ORDER[severity]
+    except (KeyError, TypeError):
+        return -1
+
+
 def investigation_queue(incs: list[Incident], min_severity: str = "high") -> list[Incident]:
     """New incidents worth investigating now: severity at or above min_severity, most severe
     first, oldest first within a severity."""
