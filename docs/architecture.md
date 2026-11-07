@@ -78,7 +78,7 @@ and can only act on the lab after a human approves.
 | Look | Dashboards and search for humans | Wazuh dashboard | Apache-2.0 / GPL-2.0 | wazuh VM | ✅ live |
 | Reason | Decide what matters, investigate, explain | Triage + investigation agents (Python) | this repo | WSL2 | ✅ live |
 | Reason | Give agents and Claude Code the same SOC tools | MCP server | this repo | WSL2 | Phase 3 |
-| Reason | Route each task to a suitable model | Anthropic API (OpenRouter optional) | paid API | cloud | ✅ live |
+| Reason | Route each task to a suitable model | Anthropic API (OpenRouter optional, triage only) | paid API | cloud | ✅ live |
 | Record | Cases, timelines, IOCs, analyst notes | DFIR-IRIS | LGPL-3.0 | WSL2 (Docker) | ✅ live |
 | Act | Isolate host, kill process, block IP, after approval | Wazuh active response | GPL-2.0 | manager → agents | Phase 3 |
 | Measure | Did we detect it, judge it right, and at what cost? | Eval harness | this repo | WSL2 | Phase 4 |

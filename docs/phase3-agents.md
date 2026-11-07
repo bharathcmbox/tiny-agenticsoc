@@ -8,7 +8,12 @@ MCP server, SOC console and gateway working**. Next: sharing (Tailscale or Cloud
 - **Providers.** Model strings in `.env` carry a prefix: `anthropic:claude-haiku-5-5` calls the Anthropic
   API directly, spending Anthropic credits (key: `SOC_ANTHROPIC_API_KEY` in `~/.anthropic_env`), and
   `openrouter:<id>` calls OpenRouter (key: `OPENROUTER_API_KEY` from the environment or `~/.openrouter_env`).
-  Defaults: triage `anthropic:claude-haiku-5-5`, investigation `anthropic:claude-sonnet-5-5`.
+  Unprefixed, `claude-*` means anthropic and anything containing `/` means openrouter (`split_model` in
+  `llm.py`). Defaults: triage `anthropic:claude-haiku-5-5`, investigation `anthropic:claude-sonnet-5-5`.
+- **Which agent runs where.** **Triage** (`TRIAGE_MODEL`) works on **both** providers. The **investigation
+  agent** (`INVESTIGATE_MODEL`) and **ask** (`ASK_MODEL`, falling back to `INVESTIGATE_MODEL`; CLI and
+  console) are **Anthropic-only**: `investigate` exits with an error on a non-anthropic model, and `ask`
+  always uses the Anthropic client, so an OpenRouter id there fails at the API. Known limitation.
 - **Don't export `ANTHROPIC_API_KEY` in your interactive shell.** Claude Code would pick it up and bill
   to API credits instead of your subscription. The agent reads its key from the file, not your shell.
 - Non-secret settings: `.env` (copied from `.env.example`): models, `MIN_LEVEL`, how to reach the indexer.
@@ -23,18 +28,26 @@ MCP server, SOC console and gateway working**. Next: sharing (Tailscale or Cloud
 uv run --project agent python -m socagent poll   --since 2h             # bundles only, no LLM calls
 uv run --project agent python -m socagent triage --since 2h --limit 10  # triage and append to the ledger
 uv run --project agent python -m socagent triage                        # since the last checkpoint
-uv run --project agent python -m socagent ledger                        # verdict counts and spend
+uv run --project agent python -m socagent ledger                        # verdicts and spend: per model, per provider, total
 uv run --project agent python -m socagent incidents                     # group escalations into incidents
 uv run --project agent python -m socagent incident INC-20261101-003     # one incident as JSON
 uv run --project agent python -m socagent run                           # one cycle: triage new + group
 uv run --project agent python -m socagent queue --min-severity medium   # new incidents awaiting investigation, most severe first (default: high+)
-uv run --project agent python -m socagent investigate                   # investigate all incidents with status 'new'
-uv run --project agent python -m socagent investigate INC-20261101-003  # one incident (report in results/agent/investigations/)
-uv run --project agent python -m unittest discover -s agent/tests       # grouping rules
+uv run --project agent python -m socagent investigate                   # the investigation queue: every new incident, most severe first
+uv run --project agent python -m socagent investigate --min-severity high  # only new incidents at high or critical
+uv run --project agent python -m socagent investigate INC-20261101-003  # one incident, any status (report in results/agent/investigations/)
+uv run --project agent python -m unittest discover -s agent/tests       # agent tests (grouping rules, investigation queue)
+cd agent && uv run pytest                                               # the same tests with pytest (as in CLAUDE.md)
 ```
 
+`investigate` without ids takes **new** incidents from the **investigation queue**: most severe first,
+oldest first within a severity. `--min-severity` defaults to `low`, i.e. **all new incidents** (`queue`
+defaults to `high`). Explicit incident ids bypass the queue and `--min-severity`.
+
 The ledger is `results/agent/triage.jsonl` (git-ignored): one line per bundle with the verdict,
-techniques, evidence, tokens, **cost in USD** and latency.
+techniques, evidence, tokens, **cost in USD** and latency. `socagent ledger` prints one line **per model**
+(bundles, verdicts, escalations, cost, cost per bundle, average latency), then **per-provider** totals
+(`anthropic`, `openrouter`) and a **grand total**.
 
 ## DFIR-IRIS case management
 
@@ -139,7 +152,7 @@ uv run --project agent python -m socagent ask "which processes touched lsass tod
   tool calls, then an answer with an evidence table, confidence, cost and follow-up questions. It also
   has an incident list with the investigation reports, a *Connect Claude Code* tab and a *How it works*
   tab (`docs/presales.html`, the pre-sales walkthrough). Self-contained, works offline in the lab.
-- **Ask agent** (`ask.py`): Claude Sonnet 5.5 at effort `low`, max 10 turns, the same read-only tools,
+- **Ask agent** (`ask.py`): Claude Sonnet 5.5 (Anthropic API only) at effort `low`, max 10 turns, the same read-only tools,
   and a strict `answer` tool (markdown answer, evidence rows, confidence, follow-ups). The clock goes
   in the question so tools and system prompt cache across questions. About $0.04 and 15–20 s per
   question on the lab data.
@@ -173,8 +186,14 @@ its inventory, which would have tripped new rule 100401. It is now excluded.
   `tool_choice: auto` + `strict: true` schema + an explicit instruction, with one re-prompt if no tool
   call comes back (forced `tool_choice` is rejected by Sonnet/Opus 5.5). The system prompt and tool are
   prompt-cached (1,360 tokens read from cache on every call after the first). `stop_reason: refusal` is
-  recorded as verdict `error` and escalated to a human. On OpenRouter: forced tool call plus
-  `reasoning.effort`.
+  recorded as verdict `error` and escalated to a human. On OpenRouter (OpenAI SDK, `reasoning.effort`
+  passed through): a **forced `tool_choice`** only on models that accept it; models that reject it
+  (`OPENROUTER_NO_FORCED_TOOL`: `anthropic/claude-sonnet-5.5`, `anthropic/claude-opus-5.5`) get
+  `tool_choice: auto` + an explicit instruction, with **one re-prompt** if no tool call comes back. If
+  any other upstream returns a 400 about `tool_choice` on a forced call, the call is retried once in
+  auto mode (recorded in the row's `notes`). **Prompt caching**: `anthropic/*` ids get a `cache_control`
+  breakpoint on the system message; other providers cache automatically. Cost is the `cost` OpenRouter
+  reports (its public price list only when that is missing).
   The system prompt carries the asset inventory, not knowledge of the test harness.
 
 - **Incident grouping** (`incidents.py`, no LLM): takes the latest verdict per bundle, keeps those
@@ -187,7 +206,7 @@ its inventory, which would have tripped new rule 100401. It is now excluded.
   suspicious only. IDs (`INC-YYYYMMDD-NNN`) and statuses stay stable across re-runs. Output goes to
   `results/agent/incidents.json`.
 
-- **Investigation agent** (`investigate.py` + `tools.py`): Claude Sonnet 5.5, adaptive thinking at effort
+- **Investigation agent** (`investigate.py` + `tools.py`): Claude Sonnet 5.5 (Anthropic API only), adaptive thinking at effort
   `medium`, in a manual tool loop capped at 16 turns. Read-only tools over the indexer:
   `search_events` (Lucene over alerts or archives), `host_timeline`, `process_tree` (Sysmon GUID chain
   to the root plus children), `network_flows` (Zeek + Suricata by community_id or IP) and `top_values`.

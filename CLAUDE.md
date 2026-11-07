@@ -14,8 +14,10 @@ Hands-on agentic SOC home lab. See README.md for architecture and phase status.
 - Lab access: `ssh -i ~/.ssh/tiny-soc_ed25519 soc@<ip>`. Lab subnet 10.10.10.0/24, gateway .1, Wazuh .10.
 - Never commit secrets. `lab/.secrets/` and `.env` are git-ignored.
 - Atomic Red Team runs only inside lab VMs, never on the host or in WSL.
-- The agents call the Anthropic API directly (`agent/socagent/llm.py`, `anthropic:`/`claude-*`
-  model strings). Keep the model choice configurable (`TRIAGE_MODEL`, `INVESTIGATE_MODEL`,
+- Model access is in `agent/socagent/llm.py`, two providers: `anthropic:<model>` (Anthropic API directly;
+  unprefixed `claude-*`) and `openrouter:<id>` (OpenRouter; unprefixed ids with `/`). Triage runs on
+  both; the investigation agent and `ask` are Anthropic-only (`investigate.py` rejects other providers,
+  `ask` uses the Anthropic client). Keep the model choice configurable (`TRIAGE_MODEL`, `INVESTIGATE_MODEL`,
   `ASK_MODEL`) and record cost per alert.
 
 ## Tests

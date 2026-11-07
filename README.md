@@ -177,7 +177,9 @@ Short on time? Skip steps 2–4. The incidents and reports from earlier runs are
 
 Requirements: Windows 11 Pro (Hyper-V), about 32 GB RAM, WSL2 with Ubuntu and Docker, `uv`, an Anthropic API key
 (in `~/.anthropic_env` as `SOC_ANTHROPIC_API_KEY`, **not** exported in your shell, or Claude Code
-will bill API credits instead of your subscription).
+will bill API credits instead of your subscription). Triage can also run on **OpenRouter**
+(`TRIAGE_MODEL=openrouter:<id>`, key `OPENROUTER_API_KEY` from the environment or `~/.openrouter_env`);
+the investigation agent and `ask` are **Anthropic-only**. See [docs/phase3-agents.md](docs/phase3-agents.md).
 
 ### Everyday commands
 
@@ -185,13 +187,14 @@ will bill API credits instead of your subscription).
 uv run --project agent python -m socagent gateway        # https://localhost:8443  dashboard + Ask bar, /console/, /mcp/
 uv run --project agent python -m socagent run            # triage new alerts, group into incidents
 uv run --project agent python -m socagent queue          # new incidents awaiting investigation, most severe first (--min-severity medium)
-uv run --project agent python -m socagent investigate    # investigate new incidents (and file them in DFIR-IRIS)
+uv run --project agent python -m socagent investigate    # investigate the queue: all new incidents, most severe first (--min-severity, default low), file them in DFIR-IRIS
+uv run --project agent python -m socagent investigate INC-20261101-003   # specific incident(s), bypassing the queue
 uv run --project agent python -m socagent cases          # (re)push investigated incidents to DFIR-IRIS
 uv run --project agent python -m socagent respond list   # proposals awaiting approval (also: approve / reject / done / selftest)
 ./lab/iris/setup-iris.sh                                 # start DFIR-IRIS: https://localhost:8444 (password in lab/.secrets/iris.env)
 uv run --project agent python -m socagent ask "what happened on lin-victim today?"
 uv run --project agent python -m socagent token add alice --cap 1.00   # guest access with a $1/day cap
-uv run --project agent python -m socagent ledger         # AI spend so far
+uv run --project agent python -m socagent ledger         # triage spend so far: per model, per provider, total
 ```
 
 ### Repository map
