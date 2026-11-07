@@ -4,6 +4,18 @@ Model strings carry their provider:
   anthropic:claude-haiku-5-5            -> Anthropic API directly (spends Anthropic credits)
   openrouter:anthropic/claude-haiku-5.5 -> OpenRouter (OpenAI-compatible)
 Unprefixed: "claude-*" means anthropic, anything with a "/" means openrouter.
+
+Both paths ask for one structured answer through a single tool (`LLM.call_tool`):
+
+* Anthropic (`_anthropic_tool`): tool_choice auto + strict schema + a cached system block, one
+  retry with more room on max_tokens and re-prompts if the model answers in prose. Cost is
+  computed from ANTHROPIC_PRICES.
+* OpenRouter (`_openrouter_tool`, OpenAI SDK): a forced tool_choice where the model accepts it;
+  tool_choice "auto" plus an explicit instruction and one re-prompt for models that reject it
+  (OPENROUTER_NO_FORCED_TOOL, or a 400 about tool_choice at run time). For `anthropic/*` ids the
+  system message carries a cache_control breakpoint (OpenRouter's way to get Anthropic prompt
+  caching); other providers cache automatically and get a plain string. Cost is the `cost`
+  OpenRouter reports, falling back to its public price list only when that is missing.
 """
 from __future__ import annotations
 
@@ -16,6 +28,15 @@ from functools import lru_cache
 from .config import Settings
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
+
+# OpenRouter model-id prefixes whose upstream rejects a forced tool_choice
+# ({"type": "function", "function": {"name": ...}}). These get tool_choice="auto" instead.
+OPENROUTER_NO_FORCED_TOOL = (
+    "anthropic/claude-sonnet-5.5",
+    "anthropic/claude-opus-5.5",
+)
+# Hard cap on chat.completions.create calls per call_tool (rejected requests included).
+OPENROUTER_MAX_CALLS = 4
 
 # Anthropic list prices, USD per million tokens (cache write = 5-minute TTL, 1.25x input).
 # Claude Haiku 5.5 doubles input/output price above 100K prompt tokens; triage prompts are ~5K.
@@ -62,6 +83,18 @@ def split_model(model: str) -> tuple[str, str]:
         p, m = model.split(":", 1)
         return p, m
     return ("anthropic", model) if model.startswith("claude-") else ("openrouter", model)
+
+
+def openrouter_forces_tool(model: str) -> bool:
+    """True if a forced tool_choice may be sent to this OpenRouter model id (no "openrouter:" prefix)."""
+    return not model.startswith(OPENROUTER_NO_FORCED_TOOL)
+
+
+def _openrouter_system(model: str, system: str):
+    """System message content: cache_control content parts for anthropic/*, else a plain string."""
+    if model.startswith("anthropic/"):
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    return system
 
 
 class LLM:
@@ -145,30 +178,70 @@ class LLM:
         return usage
 
     def _openrouter_tool(self, model, system, user, tool, effort, max_tokens) -> ToolCall:
+        import openai
         client = self.openrouter()
-        fn = {"type": "function", "function": {"name": tool["name"], "description": tool["description"],
+        name = tool["name"]
+        # No "strict" here: not every OpenRouter upstream accepts it.
+        fn = {"type": "function", "function": {"name": name, "description": tool["description"],
                                                "parameters": tool["input_schema"]}}
-        force = {"type": "function", "function": {"name": tool["name"]}}
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        force = {"type": "function", "function": {"name": name}}
+        system_msg = {"role": "system", "content": _openrouter_system(model, system)}
+        instructed = f"{user}\n\nAnswer by calling the {name} tool."
+
+        def start(forced: bool) -> list:
+            # In auto mode the prompt itself must ask for the tool call.
+            return [system_msg, {"role": "user", "content": user if forced else instructed}]
+
+        forced = openrouter_forces_tool(model)
+        messages = start(forced)
         total = Usage(model=f"openrouter:{model}")
         notes: list[str] = []
-        for budget in (max_tokens, max_tokens * 2):
+        budget = max_tokens
+        length_retried = reprompted = False
+        choice = None
+        for _ in range(OPENROUTER_MAX_CALLS):
             t0 = time.monotonic()
-            resp = client.chat.completions.create(
-                model=model, messages=messages, max_tokens=budget, tools=[fn], tool_choice=force,
-                extra_body={"usage": {"include": True}, "reasoning": {"effort": effort}})
+            try:
+                resp = client.chat.completions.create(
+                    model=model, messages=messages, max_tokens=budget, tools=[fn],
+                    tool_choice=force if forced else "auto",
+                    extra_body={"usage": {"include": True}, "reasoning": {"effort": effort}})
+            except openai.BadRequestError as e:
+                msg = getattr(e, "message", None) or str(e)
+                if forced and "tool_choice" in f"{msg} {e.body}":
+                    # Upstream rejects forcing even though it is not listed: retry once in auto mode.
+                    notes.append("forced tool_choice rejected; retrying with tool_choice=auto")
+                    forced = False
+                    messages = start(forced)
+                    continue
+                raise RuntimeError(f"OpenRouter rejected the request: {msg}") from None
             total.add(self._openrouter_usage(model, resp.usage, time.monotonic() - t0))
             choice = resp.choices[0]
             if choice.finish_reason == "length":
+                # Arguments may be truncated JSON: one retry with twice the room.
                 notes.append(f"length at max_tokens={budget}")
+                if length_retried:
+                    break
+                length_retried = True
+                budget *= 2
                 continue
             calls = choice.message.tool_calls or []
             if calls:
                 return ToolCall(json.loads(calls[0].function.arguments), total, choice.finish_reason,
                                 provider="openrouter", notes=notes)
-            return ToolCall(None, total, choice.finish_reason, text=choice.message.content or "",
-                            provider="openrouter", notes=notes)
-        return ToolCall(None, total, "length", provider="openrouter", notes=notes)
+            if forced or reprompted:
+                break
+            # answered in prose: keep the turn and ask for the tool call, once
+            reprompted = True
+            notes.append("no tool call; re-prompted")
+            messages = messages + [
+                # Anthropic upstreams reject an empty assistant turn, hence the placeholder.
+                {"role": "assistant", "content": choice.message.content or "(no answer)"},
+                {"role": "user", "content": f"Submit your answer by calling {name} now."}]
+        if choice is None:   # unreachable in practice: only rejected calls, which raise or continue
+            return ToolCall(None, total, "error", provider="openrouter", notes=notes)
+        return ToolCall(None, total, choice.finish_reason or "", text=choice.message.content or "",
+                        provider="openrouter", notes=notes)
 
     @staticmethod
     def _openrouter_usage(model: str, u, latency: float) -> Usage:
@@ -177,14 +250,21 @@ class LLM:
             return usage
         details = getattr(u, "prompt_tokens_details", None)
         cached = (getattr(details, "cached_tokens", 0) or 0) if details else 0
+        written = (getattr(details, "cache_write_tokens", 0) or 0) if details else 0
         usage.cache_read_tokens = cached
-        usage.input_tokens = (u.prompt_tokens or 0) - cached
+        usage.cache_write_tokens = written
+        # prompt_tokens is the total; split it so Usage.prompt_tokens still equals it.
+        usage.input_tokens = (u.prompt_tokens or 0) - cached - written
         usage.output_tokens = u.completion_tokens or 0
-        cost = getattr(u, "cost", None) or (u.model_extra or {}).get("cost")
+        cost = getattr(u, "cost", None)
         if cost is None:
+            cost = (u.model_extra or {}).get("cost")
+        if cost is None:
+            # Only reached when OpenRouter did not report cost: fetch the public price list.
             p = _openrouter_prices().get(model, {})
-            cost = (usage.input_tokens * p.get("prompt", 0) + cached * p.get("input_cache_read", p.get("prompt", 0))
-                    + usage.output_tokens * p.get("completion", 0))
+            prompt = p.get("prompt", 0)
+            cost = (usage.input_tokens * prompt + cached * p.get("input_cache_read", prompt)
+                    + written * p.get("input_cache_write", prompt) + usage.output_tokens * p.get("completion", 0))
         usage.cost_usd = float(cost)
         return usage
 
@@ -194,4 +274,4 @@ def _openrouter_prices() -> dict[str, dict[str, float]]:
     with urllib.request.urlopen(f"{OPENROUTER_URL}/models", timeout=20) as r:
         data = json.load(r)["data"]
     return {m["id"]: {k: float(v or 0) for k, v in m.get("pricing", {}).items()
-                      if k in ("prompt", "completion", "input_cache_read")} for m in data}
+                      if k in ("prompt", "completion", "input_cache_read", "input_cache_write")} for m in data}
