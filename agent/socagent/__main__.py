@@ -3,7 +3,10 @@
   uv run --project agent python -m socagent poll   --since 2h            # show bundles, no LLM calls
   uv run --project agent python -m socagent triage --since 2h --limit 5 # triage, append to the ledger
   uv run --project agent python -m socagent triage                      # since last checkpoint
-  uv run --project agent python -m socagent ledger                      # verdicts + spend so far
+  uv run --project agent python -m socagent ledger                      # verdicts + spend per model/provider
+  uv run --project agent python -m socagent queue                       # new incidents awaiting investigation
+  uv run --project agent python -m socagent investigate --min-severity high  # investigate the queue, most severe first
+  uv run --project agent python -m socagent investigate INC-...         # specific incident(s), any status
 """
 from __future__ import annotations
 
@@ -80,19 +83,46 @@ def cmd_triage(a, s: Settings):
     print(f"spent ${total:.4f} on {len(todo)} bundles")
 
 
+def ledger_totals(rows: list[dict]) -> dict:
+    """Pure aggregation of ledger rows: per-model, per-provider and overall totals (no I/O)."""
+    from .llm import split_model
+    models: dict[str, dict] = {}
+    latency: dict[str, float] = {}
+    for r in rows:
+        model = r["model"]
+        m = models.setdefault(model, {"provider": split_model(model)[0], "bundles": 0, "cost_usd": 0.0,
+                                      "escalated": 0, "verdicts": {}, "avg_latency_s": 0.0})
+        m["bundles"] += 1
+        m["cost_usd"] += float(r.get("cost_usd") or 0)
+        m["escalated"] += 1 if r.get("escalate") else 0
+        verdict = r.get("verdict")
+        m["verdicts"][verdict] = m["verdicts"].get(verdict, 0) + 1
+        latency[model] = latency.get(model, 0.0) + float(r.get("latency_s") or 0)
+    providers: dict[str, dict] = {}
+    for model, m in models.items():
+        m["avg_latency_s"] = latency[model] / m["bundles"]
+        p = providers.setdefault(m["provider"], {"bundles": 0, "cost_usd": 0.0, "models": 0})
+        p["bundles"] += m["bundles"]
+        p["cost_usd"] += m["cost_usd"]
+        p["models"] += 1
+    total = {"bundles": sum(m["bundles"] for m in models.values()),
+             "cost_usd": sum(m["cost_usd"] for m in models.values())}
+    return {"models": models, "providers": providers, "total": total}
+
+
 def cmd_ledger(a, s: Settings):
     if not LEDGER.exists():
         sys.exit("no ledger yet")
     rows = [json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()]
-    for model in sorted({r["model"] for r in rows}):
-        rs = [r for r in rows if r["model"] == model]
-        by = {}
-        for r in rs:
-            by[r["verdict"]] = by.get(r["verdict"], 0) + 1
-        cost = sum(r["cost_usd"] for r in rs)
-        lat = sum(r["latency_s"] for r in rs) / len(rs)
-        print(f"{model:40s} {len(rs):3d} triaged · {by} · escalated {sum(r['escalate'] for r in rs)} · "
-              f"${cost:.4f} total · ${cost / len(rs):.5f}/bundle · {lat:.1f}s avg")
+    t = ledger_totals(rows)
+    for model in sorted(t["models"]):
+        m = t["models"][model]
+        print(f"{model:40s} {m['bundles']:3d} triaged · {m['verdicts']} · escalated {m['escalated']} · "
+              f"${m['cost_usd']:.4f} total · ${m['cost_usd'] / m['bundles']:.5f}/bundle · {m['avg_latency_s']:.1f}s avg")
+    for name in sorted(t["providers"]):
+        p = t["providers"][name]
+        print(f"provider {name:31s} {p['bundles']:3d} bundles · {p['models']} model(s) · ${p['cost_usd']:.4f} total")
+    print(f"{'total':40s} {t['total']['bundles']:3d} bundles · ${t['total']['cost_usd']:.4f} total")
 
 
 def _ledger_rows() -> list[dict]:
@@ -143,10 +173,10 @@ def cmd_investigate(a, s: Settings):
         if missing:
             sys.exit(f"unknown incident(s): {', '.join(sorted(missing))}")
     else:
-        todo = [i for i in incs if i.status == "new"]
-    if not todo:
-        print("nothing to investigate (no incidents with status 'new')")
-        return
+        todo = I.investigation_queue(incs, a.min_severity)  # same objects as incs, so I.save(incs) persists
+        if not todo:
+            print(f"nothing to investigate (no new incidents at severity {a.min_severity} or above)")
+            return
     llm, total = LLM(s), 0.0
     with Indexer(s) as ix:
         tools = SocTools(ix)
@@ -307,8 +337,12 @@ def main():
     sub.add_parser("ledger")
     r = sub.add_parser("run", help="triage new alerts since the checkpoint, then group incidents")
     r.add_argument("--limit", type=int, default=25)
-    v = sub.add_parser("investigate", help="run the investigation agent on incidents (default: all with status 'new')")
+    v = sub.add_parser("investigate", help="run the investigation agent on incidents (default: the investigation "
+                                           "queue, i.e. new incidents, most severe first)")
     v.add_argument("id", nargs="*"); v.add_argument("--effort", default="medium", choices=["low", "medium", "high", "xhigh"])
+    v.add_argument("--min-severity", default="low", choices=["low", "medium", "high", "critical"],
+                   help="lowest severity to investigate when no ids are given (default: low, i.e. every new "
+                        "incident; explicit ids ignore this)")
     v.add_argument("--no-iris", action="store_true", help="don't push the results to DFIR-IRIS")
     q = sub.add_parser("ask", help="natural-language question over the SOC data")
     q.add_argument("question", nargs="+"); q.add_argument("--effort", default="low", choices=["low", "medium", "high"])
