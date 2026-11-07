@@ -150,8 +150,8 @@ def group(triaged: list[dict], existing: list[Incident]) -> list[Incident]:
     return out
 
 
-def severity_rank[S = str](severity: S) -> int:
-    """How serious a severity is. Unknown ones rank lowest."""
+def severity_rank(severity: str) -> int:
+    """Rank of a severity from SEVERITY_ORDER; -1 for an unknown severity."""
     try:
         return SEVERITY_ORDER[severity]
     except (KeyError, TypeError):

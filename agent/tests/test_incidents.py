@@ -112,5 +112,17 @@ class InvestigationQueue(unittest.TestCase):
         self.assertEqual([i.id for i in queue], ["early", "late"])
 
 
+class SeverityRank(unittest.TestCase):
+    def test_known_severities_use_severity_order(self):
+        for sev, rank in I.SEVERITY_ORDER.items():
+            self.assertEqual(I.severity_rank(sev), rank)
+        self.assertEqual(I.severity_rank("low"), 0)
+        self.assertEqual(I.severity_rank("critical"), 3)
+
+    def test_unknown_severity_ranks_minus_one(self):
+        for sev in ("bogus", "", "HIGH", None):
+            self.assertEqual(I.severity_rank(sev), -1)
+
+
 if __name__ == "__main__":
     unittest.main()
