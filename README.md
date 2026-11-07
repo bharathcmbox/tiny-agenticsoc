@@ -184,6 +184,7 @@ will bill API credits instead of your subscription).
 ```bash
 uv run --project agent python -m socagent gateway        # https://localhost:8443  dashboard + Ask bar, /console/, /mcp/
 uv run --project agent python -m socagent run            # triage new alerts, group into incidents
+uv run --project agent python -m socagent queue          # new incidents awaiting investigation, most severe first (--min-severity medium)
 uv run --project agent python -m socagent investigate    # investigate new incidents (and file them in DFIR-IRIS)
 uv run --project agent python -m socagent cases          # (re)push investigated incidents to DFIR-IRIS
 uv run --project agent python -m socagent respond list   # proposals awaiting approval (also: approve / reject / done / selftest)
