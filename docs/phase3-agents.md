@@ -27,6 +27,7 @@ uv run --project agent python -m socagent ledger                        # verdic
 uv run --project agent python -m socagent incidents                     # group escalations into incidents
 uv run --project agent python -m socagent incident INC-20261101-003     # one incident as JSON
 uv run --project agent python -m socagent run                           # one cycle: triage new + group
+uv run --project agent python -m socagent queue --min-severity medium   # new incidents awaiting investigation, most severe first (default: high+)
 uv run --project agent python -m socagent investigate                   # investigate all incidents with status 'new'
 uv run --project agent python -m socagent investigate INC-20261101-003  # one incident (report in results/agent/investigations/)
 uv run --project agent python -m unittest discover -s agent/tests       # grouping rules

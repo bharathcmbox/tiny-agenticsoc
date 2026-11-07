@@ -120,6 +120,17 @@ def cmd_incident(a, s: Settings):
     print(json.dumps(I.asdict(inc), indent=1, ensure_ascii=False))
 
 
+def cmd_queue(a, s: Settings):
+    """Read-only: new incidents awaiting investigation, most severe first, oldest first within a severity."""
+    from . import incidents as I
+    queue = I.investigation_queue(I.load(), a.min_severity)
+    if not queue:
+        print(f"investigation queue is empty (no new incidents at severity {a.min_severity} or above)")
+        return
+    for i in queue:
+        print(f"{i.id} {i.severity:8s} {i.first}  {i.title}")
+
+
 def cmd_investigate(a, s: Settings):
     from . import incidents as I
     from .investigate import investigate, save
@@ -315,10 +326,13 @@ def main():
     tk.add_argument("--cap", type=float, default=1.00, help="daily spend cap in USD on the owner's key")
     sub.add_parser("incidents", help="group escalated verdicts into incidents and list them")
     inc = sub.add_parser("incident", help="show one incident"); inc.add_argument("id")
+    qu = sub.add_parser("queue", help="list new incidents awaiting investigation, most severe first")
+    qu.add_argument("--min-severity", default="high", choices=["low", "medium", "high", "critical"],
+                    help="lowest severity to include (default: high)")
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway, "cases": cmd_cases, "respond": cmd_respond}[a.cmd](a, s)
+     "incident": cmd_incident, "queue": cmd_queue, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway, "cases": cmd_cases, "respond": cmd_respond}[a.cmd](a, s)
 
 
 if __name__ == "__main__":
