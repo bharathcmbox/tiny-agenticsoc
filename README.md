@@ -150,7 +150,9 @@ Short on time? Skip steps 2–4. The incidents and reports from earlier runs are
   the home network and the laptop, and Atomic Red Team runs only inside lab VMs.
 - **Controlled spend.** Every console and MCP request needs a token. Guests get a daily dollar cap
   and a rate limit, or bring their own Anthropic key, which is never stored. Every answer shows its
-  cost.
+  cost. Guest tokens can expire (`token add alice --cap 1.00 --days 30`; without `--days` they never
+  do). Expired tokens are refused like revoked ones and show as EXPIRED in `token list`. The owner
+  token never expires. `socagent spend [--days 7]` reports spend per guest per UTC day against the cap.
 
 ## 7. Known limitations (be upfront in a pitch)
 
@@ -193,7 +195,9 @@ uv run --project agent python -m socagent cases          # (re)push investigated
 uv run --project agent python -m socagent respond list   # proposals awaiting approval (also: approve / reject / done / selftest)
 ./lab/iris/setup-iris.sh                                 # start DFIR-IRIS: https://localhost:8444 (password in lab/.secrets/iris.env)
 uv run --project agent python -m socagent ask "what happened on lin-victim today?"
-uv run --project agent python -m socagent token add alice --cap 1.00   # guest access with a $1/day cap
+uv run --project agent python -m socagent token add alice --cap 1.00 --days 30   # guest access, $1/day cap, expires in 30 days (no --days: never)
+uv run --project agent python -m socagent token list     # tokens with cap, spend today, expiry; REVOKED / EXPIRED marked
+uv run --project agent python -m socagent spend          # console spend per guest per UTC day: owner-paid vs own key, vs cap (--days 7)
 uv run --project agent python -m socagent ledger         # triage spend so far: per model, per provider, total
 ```
 

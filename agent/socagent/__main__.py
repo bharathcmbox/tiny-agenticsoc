@@ -309,15 +309,34 @@ def cmd_token(a, s: Settings):
     from . import access
     if a.action == "add":
         if not a.name:
-            sys.exit("usage: socagent token add NAME [--cap 1.00]")
-        tok = access.add_guest(a.name, a.cap)
-        print(f"guest '{a.name}' (daily cap ${a.cap:.2f}) token: {tok}\nshown once; it is stored only as a hash.")
+            sys.exit("usage: socagent token add NAME [--cap 1.00] [--days N]")
+        tok = access.add_guest(a.name, a.cap, a.days)
+        p = access.authenticate(tok)
+        exp = f"expires {p.expires}" if p and p.expires else "never expires"
+        print(f"guest '{a.name}' (daily cap ${a.cap:.2f}, {exp}) token: {tok}\nshown once; it is stored only as a hash.")
     elif a.action == "revoke":
         print(f"revoked {access.revoke(a.name)} token(s) for '{a.name}'")
     else:
         for p in access.principals():
             print(f"{p.name:16s} {p.role:6s} cap ${p.daily_cap_usd:5.2f}  spent today ${access.spent_today(p.name):.4f}  "
-                  f"{'REVOKED' if p.revoked else 'active'}  since {p.created}")
+                  f"{'REVOKED' if p.revoked else 'EXPIRED' if access.expired(p) else 'active'}  since {p.created}  "
+                  f"expires {p.expires or 'never'}")
+
+
+def cmd_spend(a, s: Settings):
+    """Console spend per principal per UTC day vs daily cap. Read-only, no network."""
+    from . import access
+    rows = access.spend_report(a.days)
+    if not rows:
+        print(f"no console spend in the last {a.days} days"); return
+    print(f"{'day':10s}  {'principal':16s} {'owner-paid':>11s} {'byo':>10s}  cap")
+    for r in rows:
+        cap = r["cap_usd"]
+        c = "-" if cap is None else "unlimited" if cap == 0 else f"${cap:.2f}"
+        over = "  OVER" if cap and r["owner_usd"] > cap else ""
+        print(f"{r['day']:10s}  {r['name']:16s} ${r['owner_usd']:10.4f} ${r['byo_usd']:9.4f}  {c}{over}")
+    own, byo = sum(r["owner_usd"] for r in rows), sum(r["byo_usd"] for r in rows)
+    print(f"{'total':10s}  {'':16s} ${own:10.4f} ${byo:9.4f}  all ${own + byo:.4f}")
 
 
 def cmd_run(a, s: Settings):
@@ -358,6 +377,9 @@ def main():
     tk = sub.add_parser("token", help="manage console/MCP guest tokens")
     tk.add_argument("action", choices=["add", "list", "revoke"]); tk.add_argument("name", nargs="?")
     tk.add_argument("--cap", type=float, default=1.00, help="daily spend cap in USD on the owner's key")
+    tk.add_argument("--days", type=int, default=None, help="expire the guest token after N days (default: never)")
+    sp = sub.add_parser("spend", help="console spend per principal per UTC day vs daily cap (read-only)")
+    sp.add_argument("--days", type=int, default=7)
     sub.add_parser("incidents", help="group escalated verdicts into incidents and list them")
     inc = sub.add_parser("incident", help="show one incident"); inc.add_argument("id")
     qu = sub.add_parser("queue", help="list new incidents awaiting investigation, most severe first")
@@ -366,7 +388,7 @@ def main():
     a = ap.parse_args()
     s = Settings.load()
     {"poll": cmd_poll, "triage": cmd_triage, "ledger": cmd_ledger, "incidents": cmd_incidents,
-     "incident": cmd_incident, "queue": cmd_queue, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "gateway": cmd_gateway, "cases": cmd_cases, "respond": cmd_respond}[a.cmd](a, s)
+     "incident": cmd_incident, "queue": cmd_queue, "run": cmd_run, "investigate": cmd_investigate, "ask": cmd_ask, "console": cmd_console, "token": cmd_token, "spend": cmd_spend, "gateway": cmd_gateway, "cases": cmd_cases, "respond": cmd_respond}[a.cmd](a, s)
 
 
 if __name__ == "__main__":
